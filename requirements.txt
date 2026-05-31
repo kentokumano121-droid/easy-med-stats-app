@@ -5,3 +5,7 @@ scipy
 pingouin
 statsmodels
 openpyxl
+plotly
+matplotlib
+seaborn
+scikit-learn
