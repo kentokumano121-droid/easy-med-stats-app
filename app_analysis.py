@@ -189,13 +189,20 @@ if uploaded_file is not None:
                         paired = st.radio("Q2. データの対応は？", ["対応なし", "対応あり"])
                         unique_groups = df[group_col].dropna().unique(); num_groups = len(unique_groups)
 
-                        # シャピロウィルク検定の実行（エラー回避のためデータ数が3以上の場合のみ）
+                        # 🔍 事前検定の実行と画面表示
                         clean_data = df[target_col].dropna()
+                        st.write("### 🔍 事前検定（正規性の確認）")
                         if len(clean_data) >= 3:
                             _, p_value_shapiro = stats.shapiro(clean_data)
                             normality = p_value_shapiro > 0.05
+                            
+                            if normality:
+                                st.info(f"**シャピロ・ウィルク検定 (P値 = {p_value_shapiro:.4f})**\n\nP値が0.05より大きいため、データは「正規分布（綺麗な山型）」と判定しました。パラメトリック検定を行います。")
+                            else:
+                                st.warning(f"**シャピロ・ウィルク検定 (P値 = {p_value_shapiro:.4f})**\n\nP値が0.05未満のため、データは「非正規分布（偏りあり）」と判定しました。ノンパラメトリック検定を行います。")
                         else:
-                            normality = False # データが少なすぎる場合は安全のためノンパラ
+                            normality = False
+                            st.warning("データ数が少なすぎるため、安全のため非正規分布として扱い、ノンパラメトリック検定を行います。")
 
                         if num_groups == 2:
                             if paired == "対応なし":
@@ -380,8 +387,18 @@ if uploaded_file is not None:
                          st.warning("⚠️ X軸とY軸には異なる変数を選んでください。")
                      else:
                          df_clean = df[[x_col, y_col]].dropna()
-                         _, p_x = stats.shapiro(df_clean[x_col]); _, p_y = stats.shapiro(df_clean[y_col])
-                         corr_method = "pearson" if p_x > 0.05 and p_y > 0.05 else "spearman"
+                         _, p_x = stats.shapiro(df_clean[x_col])
+                         _, p_y = stats.shapiro(df_clean[y_col])
+                         
+                         st.write("### 🔍 事前検定（正規性の確認）")
+                         st.info(f"**シャピロ・ウィルク検定の結果**\n- 変数X ({x_col}) のP値 = {p_x:.4f}\n- 変数Y ({y_col}) のP値 = {p_y:.4f}")
+                         
+                         if p_x > 0.05 and p_y > 0.05:
+                             corr_method = "pearson"
+                             st.success("両方のデータが「正規分布」と判定されたため、**ピアソン (Pearson) の相関係数** を使用します。")
+                         else:
+                             corr_method = "spearman"
+                             st.warning("少なくとも一方に「非正規分布（偏り）」があるため、**スピアマン (Spearman) の順位相関係数** を使用します。")
 
                          st.write("### 🛠️ グラフの編集")
                          g_title = st.text_input("グラフのタイトル", value=f"{x_col} と {y_col} の相関散布図", key="gt_c1")
