@@ -95,6 +95,25 @@ if st.session_state.current_df is not None:
         st.session_state.action_msg = None
 
     st.markdown("### データプレビュー")
+
+    # 💡 プレビューの強化（先頭、末尾、ランダム、全てを切り替え可能）
+    st.markdown("### 👀 データプレビュー")
+
+    # 🔽🔽🔽 ここから追加 🔽🔽🔽
+    with st.expander("各列の現在のデータ型（数値 / 文字列）を確認する", expanded=False):
+        type_info = []
+        for c in df.columns:
+            if pd.api.types.is_numeric_dtype(df[c]):
+                status = "数値型 (Numeric)"
+            else:
+                status = "文字列型 (String/Object) ※一部計算で使えない可能性があります"
+            type_info.append({"列名": c, "現在の状態": status})
+        st.dataframe(pd.DataFrame(type_info), use_container_width=True)
+    # 🔼🔼🔼 ここまで追加 🔼🔼🔼
+
+    prev_col1, prev_col2 = st.columns([1, 4])
+    with prev_col1:
+    
     prev_col1, prev_col2 = st.columns([1, 4])
     with prev_col1:
         prev_mode = st.radio("表示範囲", ["最初 (Head)", "最後 (Tail)", "ランダム (Sample)", "全て (All)"])
