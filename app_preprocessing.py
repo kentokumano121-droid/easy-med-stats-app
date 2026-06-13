@@ -137,12 +137,15 @@ if st.session_state.current_df is not None:
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### 重複データの削除")
-            dup_col = st.selectbox("基準となる列（IDなど）", df.columns, key="dup_col")
+            dup_cols = st.multiselect("重複判定の基準とする列（何も選ばないと『全列が完全に同じ行』を削除）", df.columns, key="dup_col")
             keep_method = st.radio("残すデータ", ["最初のデータ", "最後のデータ"], key="keep_m")
             if st.button("重複を削除して上書きする", type="primary"):
                 keep_arg = 'first' if "最初" in keep_method else 'last'
                 old_len = len(df)
-                st.session_state.current_df = df.drop_duplicates(subset=[dup_col], keep=keep_arg)
+                if len(dup_cols) == 0:
+                    st.session_state.current_df = df.drop_duplicates(keep=keep_arg)
+                else:
+                    st.session_state.current_df = df.drop_duplicates(subset=dup_cols, keep=keep_arg)
                 st.session_state.action_msg = f"重複削除完了： {old_len - len(st.session_state.current_df)} 件のデータを削除しました。"
                 st.rerun()
         with col2:
