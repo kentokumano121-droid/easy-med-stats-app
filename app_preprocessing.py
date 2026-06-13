@@ -37,10 +37,11 @@ def load_data(file, skip, head):
 if uploaded_file is None:
     st.session_state.raw_df = None
     st.session_state.current_df = None
-    st.session_state.main_file_name = None  # 👈 id から name に変更
+    st.session_state.main_file_sig = None  # 👈 nameからsig(シグネチャ)に変更
 else:
-    # 🌟 file_id を name に変更して環境依存のクラッシュを完全防止
-    if (st.session_state.get('main_file_name') != uploaded_file.name or 
+    # 🌟 ファイル名と容量のペアで変更を完璧に検知
+    current_sig = (uploaded_file.name, uploaded_file.size)
+    if (st.session_state.get('main_file_sig') != current_sig or 
         st.session_state.get('last_skip') != skip_rows or 
         st.session_state.get('last_header') != header_rows):
         
@@ -48,30 +49,31 @@ else:
             df = load_data(uploaded_file, skip_rows, header_rows)
             st.session_state.raw_df = df.copy()
             st.session_state.current_df = df.copy()
-            st.session_state.main_file_name = uploaded_file.name  # 👈 id から name に変更
+            st.session_state.main_file_sig = current_sig  # 👈 ここも更新
             st.session_state.last_skip = skip_rows
             st.session_state.last_header = header_rows
             st.session_state.action_msg = "データを読み込みました。（設定変更を反映）"
         except Exception as e:
             st.sidebar.error(f"読み込みエラー: {e}")
 
+# 🔽 別ファイル（df_B）の読み込み部分も同様に修正 🔽
 df_B = None
 if uploaded_file_B is not None:
-    # 🌟 file_id を name に変更して安全化
-    if (st.session_state.get('sub_file_name') != uploaded_file_B.name or 
+    current_sig_b = (uploaded_file_B.name, uploaded_file_B.size)
+    if (st.session_state.get('sub_file_sig') != current_sig_b or 
         st.session_state.get('last_skip_b') != skip_rows_b or 
         st.session_state.get('last_header_b') != header_rows_b):
         try:
             uploaded_file_B.seek(0)
             df_B = load_data(uploaded_file_B, skip_rows_b, header_rows_b)
-            st.session_state.sub_file_name = uploaded_file_B.name  # 👈 id から name に変更
+            st.session_state.sub_file_sig = current_sig_b
             st.session_state.last_skip_b = skip_rows_b
             st.session_state.last_header_b = header_rows_b
         except Exception as e: st.sidebar.error(f"エラー: {e}")
     else:
         uploaded_file_B.seek(0)
         df_B = load_data(uploaded_file_B, skip_rows_b, header_rows_b)
-
+        
 if st.session_state.current_df is not None:
     df = st.session_state.current_df
 
@@ -183,12 +185,21 @@ if st.session_state.current_df is not None:
                 if "削除" in na_method:
                     st.session_state.current_df = df.dropna(subset=[na_col])
                     st.session_state.action_msg = f"欠損値削除完了： {old_len - len(st.session_state.current_df)} 行を削除しました。"
+                    st.rerun()
                 else:
-                    if "平均値" in na_method and pd.api.types.is_numeric_dtype(df[na_col]): st.session_state.current_df[na_col] = df[na_col].fillna(df[na_col].mean())
-                    elif "中央値" in na_method and pd.api.types.is_numeric_dtype(df[na_col]): st.session_state.current_df[na_col] = df[na_col].fillna(df[na_col].median())
-                    elif "直前" in na_method: st.session_state.current_df[na_col] = df[na_col].ffill()
-                    st.session_state.action_msg = f"欠損値の穴埋め完了： 「{na_col}」を補完しました。"
-                st.rerun()
+                    is_numeric = pd.api.types.is_numeric_dtype(df[na_col])
+                    if "平均値" in na_method:
+                        if is_numeric: st.session_state.current_df[na_col] = df[na_col].fillna(df[na_col].mean())
+                        else: st.error("⚠️ エラー：平均値は「数値型」の列でのみ計算可能です。")
+                    elif "中央値" in na_method:
+                        if is_numeric: st.session_state.current_df[na_col] = df[na_col].fillna(df[na_col].median())
+                        else: st.error("⚠️ エラー：中央値は「数値型」の列でのみ計算可能です。")
+                    elif "直前" in na_method: 
+                        st.session_state.current_df[na_col] = df[na_col].ffill()
+                    
+                    if "直前" in na_method or is_numeric:
+                        st.session_state.action_msg = f"欠損値の穴埋め完了： 「{na_col}」を補完しました。"
+                        st.rerun()
 
     # ==========================================
     # 2. 抽出
