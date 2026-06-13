@@ -289,7 +289,6 @@ if st.session_state.current_df is not None:
                     
         elif calc_mode.startswith("C"):
             date_format_col = st.selectbox("変換したい列（日付や数字の羅列）", df.columns, key="df_col")
-            # 🌟【修正】選択肢を分かりやすくし、「混在」に完璧に対応するメニューに変更
             date_format_type = st.radio("現在の形式", [
                 "自動判定（8桁数字・スラッシュ・ハイフン混在）",
                 "8桁の数字（YYYYMMDD）専用",
@@ -300,21 +299,36 @@ if st.session_state.current_df is not None:
             
             if st.button("標準的な日付データ（YYYY-MM-DD）に変換する", type="primary"):
                 try:
-                    # まず見えないゴミや .0 を完璧に削ぎ落とす
-                    cleaned_str = df[date_format_col].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
-                    
-                    if "6桁" in date_format_type:
-                        parsed = pd.to_datetime(cleaned_str + '01', format='%Y%m%d', errors='coerce')
-                    elif "8桁" in date_format_type and "専用" in date_format_type:
-                        parsed = pd.to_datetime(cleaned_str, format='%Y%m%d', errors='coerce')
-                    elif "スラッシュ" in date_format_type and "専用" in date_format_type:
-                        parsed = pd.to_datetime(cleaned_str, errors='coerce')
-                    else: 
-                        # 🌟 自動判定（混在）の場合：スラッシュ変換と8桁変換を別々に行い、失敗した穴を互いに埋め合わせる最強コンボ
-                        parsed_gen = pd.to_datetime(cleaned_str, errors='coerce')
-                        parsed_8 = pd.to_datetime(cleaned_str, format='%Y%m%d', errors='coerce')
-                        parsed = parsed_gen.fillna(parsed_8)
-                    
+                    # 🌟【修正】ChatGPT提案の「1セルずつ確実に判定する」最強関数
+                    def parse_mixed_date(val):
+                        if pd.isna(val): return pd.NaT
+                        val_str = str(val).strip()
+                        if val_str in ['', 'nan', 'None']: return pd.NaT
+                        
+                        # .0 や .00 のような小数点以下を強制排除
+                        if '.' in val_str:
+                            parts = val_str.split('.')
+                            if parts[1].replace('0', '') == '': # .0 や .000 の場合
+                                val_str = parts[0]
+
+                        try:
+                            if "6桁" in date_format_type:
+                                return pd.to_datetime(val_str + '01', format='%Y%m%d')
+                            elif "8桁" in date_format_type and "専用" in date_format_type:
+                                return pd.to_datetime(val_str, format='%Y%m%d')
+                            elif "スラッシュ" in date_format_type and "専用" in date_format_type:
+                                return pd.to_datetime(val_str)
+                            else:
+                                # 混在（自動判定）の場合：8桁の数字ならYYYYMMDD、それ以外はPandasの汎用解読に任せる
+                                if len(val_str) == 8 and val_str.isdigit():
+                                    return pd.to_datetime(val_str, format='%Y%m%d')
+                                else:
+                                    return pd.to_datetime(val_str)
+                        except:
+                            return pd.NaT
+
+                    # 列全体ではなく、1セルずつ関数を通して変換する
+                    parsed = df[date_format_col].apply(parse_mixed_date)
                     st.session_state.current_df[date_format_new] = parsed.dt.strftime('%Y-%m-%d')
                     st.session_state.action_msg = f"日付変換完了： 「{date_format_new}」をカレンダー日付に変換しました。"
                     st.rerun()
