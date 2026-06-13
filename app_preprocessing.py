@@ -248,25 +248,29 @@ if st.session_state.current_df is not None:
                     st.rerun()
                 except Exception as e: st.error(f"エラー: {e}")
         elif calc_mode.startswith("B"):
-            num_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-            math_col_a = st.selectbox("変数A", num_cols, key="m_a")
+            # 【修正】数値判定を外し、すべての列を選べるように全開放
+            math_col_a = st.selectbox("変数A", df.columns, key="m_a")
             math_op = st.selectbox("計算方法", ["＋", "－", "×", "÷"], key="m_op")
             math_type = st.radio("変数Bの種類", ["他の列を指定", "固定の数値を入力"], key="m_type")
             if "列" in math_type:
-                math_col_b = st.selectbox("変数B", num_cols, key="m_b_col")
-                val_b = df[math_col_b]
+                math_col_b = st.selectbox("変数B", df.columns, key="m_b_col")
+                val_b = pd.to_numeric(df[math_col_b], errors='coerce')
             else:
-                val_b = st.number_input("固定の数値", value=1.0, key="m_b_val")
+                math_b_val = st.number_input("固定の数値", value=1.0, key="m_b_val")
+                val_b = float(math_b_val)
             math_new_name = st.text_input("新しく作る列の名前", value="Calculated_Score", key="m_new")
             if st.button("数式を計算して新しい列を追加する", type="primary"):
                 try:
-                    if "＋" in math_op: st.session_state.current_df[math_new_name] = df[math_col_a] + val_b
-                    elif "－" in math_op: st.session_state.current_df[math_new_name] = df[math_col_a] - val_b
-                    elif "×" in math_op: st.session_state.current_df[math_new_name] = df[math_col_a] * val_b
-                    elif "÷" in math_op: st.session_state.current_df[math_new_name] = df[math_col_a] / val_b
+                    # 【修正】文字列になっていても裏で強制的に数値化して計算する
+                    val_a = pd.to_numeric(df[math_col_a], errors='coerce')
+                    if "＋" in math_op: st.session_state.current_df[math_new_name] = val_a + val_b
+                    elif "－" in math_op: st.session_state.current_df[math_new_name] = val_a - val_b
+                    elif "×" in math_op: st.session_state.current_df[math_new_name] = val_a * val_b
+                    elif "÷" in math_op: st.session_state.current_df[math_new_name] = val_a / val_b
                     st.session_state.action_msg = f"四則演算完了： 新しい列「{math_new_name}」を作成しました。"
                     st.rerun()
-                except Exception as e: st.error(f"エラー: {e}")
+                except Exception as e: st.error(f"計算エラーが発生しました。データの値をご確認ください。詳細: {e}")
+                    
         elif calc_mode.startswith("C"):
             date_format_col = st.selectbox("変換したい列（日付や数字の羅列）", df.columns, key="df_col")
             date_format_type = st.radio("現在の形式", ["8桁の数字（YYYYMMDD）", "スラッシュ等で区切られた日付（YYYY/MM/DDなど）", "6桁の年月（YYYYMM） ➡ 後ろに『01』を補う"])
@@ -424,15 +428,23 @@ if st.session_state.current_df is not None:
     # ==========================================
     elif selected_tab == "7. PSM":
         st.markdown("### 傾向スコアマッチング（1:1 最近傍マッチング）")
-        st.info("【重要】介入変数（治療の有無など）は必ず「1 と 0」の数値データで入力されている必要があります。事前にタブ3でフラグ化を完了させておいてください。")
-        treat_col = st.selectbox("介入変数（治療の有無: 1 or 0）", [c for c in df.columns if set(df[c].dropna().unique()).issubset({0, 1, 0.0, 1.0, '0', '1'})], key="psm_treat")
-        covar_cols = st.multiselect("揃えたい背景因子（共変量: 年齢、数値データなど）", [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and c != treat_col], key="psm_cov")
+        st.info("【重要】介入変数（治療の有無など）は必ず「1 と 0」のデータである必要があります。事前にタブ3でフラグ化を完了させておいてください。")
+        
+        # 【修正】制限をなくし、すべての列から選べるようにする
+        treat_col = st.selectbox("介入変数（治療の有無: 1 or 0）", df.columns, key="psm_treat")
+        covar_cols = st.multiselect("揃えたい背景因子（共変量: 年齢、数値データなど）", [c for c in df.columns if c != treat_col], key="psm_cov")
         
         if st.button("傾向スコアを計算し、マッチングを実行して上書きする", type="primary"):
             if treat_col and len(covar_cols) > 0:
                 try:
                     psm_df = df.dropna(subset=[treat_col] + covar_cols).copy()
-                    psm_df[treat_col] = pd.to_numeric(psm_df[treat_col])
+                    
+                    # 【修正】文字列になっていても裏で強制的に数値化してエラーを防ぐ
+                    psm_df[treat_col] = pd.to_numeric(psm_df[treat_col], errors='coerce')
+                    for c in covar_cols:
+                        psm_df[c] = pd.to_numeric(psm_df[c], errors='coerce')
+                    psm_df = psm_df.dropna(subset=[treat_col] + covar_cols)
+                    # --- この下（X = sm.add_constant(psm_df[covar_cols]) 以降）はそのまま ---
                     X = sm.add_constant(psm_df[covar_cols])
                     y = psm_df[treat_col]
                     model = sm.Logit(y, X).fit(disp=0)
