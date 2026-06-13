@@ -286,27 +286,28 @@ if st.session_state.current_df is not None:
                     st.session_state.action_msg = f"四則演算完了： 新しい列「{math_new_name}」を作成しました。"
                     st.rerun()
                 except Exception as e: st.error(f"計算エラーが発生しました。詳細: {e}")
+                    
         elif calc_mode.startswith("C"):
             date_format_col = st.selectbox("変換したい列（日付や数字の羅列）", df.columns, key="df_col")
             date_format_type = st.radio("現在の形式", ["8桁の数字（YYYYMMDD）", "スラッシュ等で区切られた日付（YYYY/MM/DDなど）", "6桁の年月（YYYYMM） ➡ 後ろに『01』を補う"])
             date_format_new = st.text_input("上書きするか、新しい列を作るか", value=date_format_col, key="df_new")
             if st.button("標準的な日付データ（YYYY-MM-DD）に変換する", type="primary"):
                 try:
-                    # 🌟【修正】8桁もスラッシュも混ざっていても、両方とも救済して合体させる無敵コード
+                    # 🌟【特効薬】勝手についた「.0」や「見えない空白」を完全に削ぎ落としてから変換に回す
+                    cleaned_str = df[date_format_col].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+                    
                     if "6桁" in date_format_type:
-                        st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str) + '01', format='%Y%m%d', errors='coerce')
+                        st.session_state.current_df[date_format_new] = pd.to_datetime(cleaned_str + '01', format='%Y%m%d', errors='coerce')
                     else:
-                        # 8桁として解読を試みる
-                        s_8 = pd.to_datetime(df[date_format_col].astype(str), format='%Y%m%d', errors='coerce')
-                        # スラッシュ等として解読を試みる
-                        s_slash = pd.to_datetime(df[date_format_col].astype(str), errors='coerce')
-                        # 解読できた方を採用して合体させる（データ消失を防ぐ）
+                        s_8 = pd.to_datetime(cleaned_str, format='%Y%m%d', errors='coerce')
+                        s_slash = pd.to_datetime(cleaned_str, errors='coerce')
                         st.session_state.current_df[date_format_new] = s_8.combine_first(s_slash)
                     
                     st.session_state.current_df[date_format_new] = st.session_state.current_df[date_format_new].dt.strftime('%Y-%m-%d')
                     st.session_state.action_msg = f"日付変換完了： 「{date_format_new}」をカレンダー日付に変換しました。"
                     st.rerun()
                 except Exception as e: st.error(f"変換エラー: {e}")
+                    
         elif calc_mode.startswith("D"):
             type_cols = st.multiselect("型を変換したい列（複数選択可）", df.columns, key="t_cols")
             type_to = st.radio("変換先の型", ["文字列（IDやカテゴリとして扱う）", "数値（計算できるようにする）"])
