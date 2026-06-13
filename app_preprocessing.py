@@ -289,24 +289,37 @@ if st.session_state.current_df is not None:
                     
         elif calc_mode.startswith("C"):
             date_format_col = st.selectbox("変換したい列（日付や数字の羅列）", df.columns, key="df_col")
-            date_format_type = st.radio("現在の形式", ["8桁の数字（YYYYMMDD）", "スラッシュ等で区切られた日付（YYYY/MM/DDなど）", "6桁の年月（YYYYMM） ➡ 後ろに『01』を補う"])
+            # 🌟【修正】選択肢を分かりやすくし、「混在」に完璧に対応するメニューに変更
+            date_format_type = st.radio("現在の形式", [
+                "自動判定（8桁数字・スラッシュ・ハイフン混在）",
+                "8桁の数字（YYYYMMDD）専用",
+                "スラッシュ等で区切られた日付（YYYY/MM/DDなど）専用",
+                "6桁の年月（YYYYMM） ➡ 後ろに『01』を補う"
+            ])
             date_format_new = st.text_input("上書きするか、新しい列を作るか", value=date_format_col, key="df_new")
+            
             if st.button("標準的な日付データ（YYYY-MM-DD）に変換する", type="primary"):
                 try:
-                    # 🌟【特効薬】勝手についた「.0」や「見えない空白」を完全に削ぎ落としてから変換に回す
+                    # まず見えないゴミや .0 を完璧に削ぎ落とす
                     cleaned_str = df[date_format_col].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
                     
                     if "6桁" in date_format_type:
-                        st.session_state.current_df[date_format_new] = pd.to_datetime(cleaned_str + '01', format='%Y%m%d', errors='coerce')
-                    else:
-                        s_8 = pd.to_datetime(cleaned_str, format='%Y%m%d', errors='coerce')
-                        s_slash = pd.to_datetime(cleaned_str, errors='coerce')
-                        st.session_state.current_df[date_format_new] = s_8.combine_first(s_slash)
+                        parsed = pd.to_datetime(cleaned_str + '01', format='%Y%m%d', errors='coerce')
+                    elif "8桁" in date_format_type and "専用" in date_format_type:
+                        parsed = pd.to_datetime(cleaned_str, format='%Y%m%d', errors='coerce')
+                    elif "スラッシュ" in date_format_type and "専用" in date_format_type:
+                        parsed = pd.to_datetime(cleaned_str, errors='coerce')
+                    else: 
+                        # 🌟 自動判定（混在）の場合：スラッシュ変換と8桁変換を別々に行い、失敗した穴を互いに埋め合わせる最強コンボ
+                        parsed_gen = pd.to_datetime(cleaned_str, errors='coerce')
+                        parsed_8 = pd.to_datetime(cleaned_str, format='%Y%m%d', errors='coerce')
+                        parsed = parsed_gen.fillna(parsed_8)
                     
-                    st.session_state.current_df[date_format_new] = st.session_state.current_df[date_format_new].dt.strftime('%Y-%m-%d')
+                    st.session_state.current_df[date_format_new] = parsed.dt.strftime('%Y-%m-%d')
                     st.session_state.action_msg = f"日付変換完了： 「{date_format_new}」をカレンダー日付に変換しました。"
                     st.rerun()
-                except Exception as e: st.error(f"変換エラー: {e}")
+                except Exception as e: 
+                    st.error(f"変換エラー: {e}")
                     
         elif calc_mode.startswith("D"):
             type_cols = st.multiselect("型を変換したい列（複数選択可）", df.columns, key="t_cols")
