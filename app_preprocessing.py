@@ -204,7 +204,9 @@ if st.session_state.current_df is not None:
             if fil_val:
                 if "含む" in fil_type: st.session_state.current_df = df[df[fil_col].astype(str).str.contains(fil_val, na=False)]
                 elif "完全" in fil_type: st.session_state.current_df = df[df[fil_col].astype(str) == fil_val]
-                elif "以上" in fil_type: st.session_state.current_df = df[df[fil_col] >= float(fil_val)]
+                elif "以上" in fil_type: 
+                    temp_col = pd.to_numeric(df[fil_col], errors='coerce')
+                    st.session_state.current_df = df[temp_col >= float(fil_val)]
                 st.session_state.action_msg = f"抽出完了： {len(st.session_state.current_df)} 行に絞り込みました。"
                 st.rerun()
 
@@ -450,29 +452,43 @@ if st.session_state.current_df is not None:
                     if not set(psm_df[treat_col].unique()).issubset({0, 1, 0.0, 1.0}):
                         raise ValueError("介入変数は「1」と「0」のみである必要があります。事前にフラグ化を完了してください。")
                         
-                    # --- この下（X = sm.add_constant(psm_df[covar_cols]) 以降）はそのまま ---
                     X = sm.add_constant(psm_df[covar_cols])
                     y = psm_df[treat_col]
-                    model = sm.Logit(y, X).fit(disp=0)
+                    
+                    # 💡 完全分離対策：maxiterを設定（すでにtry-exceptで囲まれているためエラー時も画面に綺麗に表示されます）
+                    model = sm.Logit(y, X).fit(disp=0, maxiter=100)
                     psm_df['Propensity_Score'] = model.predict(X)
                     
                     treat_df = psm_df[psm_df[treat_col] == 1].copy()
                     control_df = psm_df[psm_df[treat_col] == 0].copy()
                     
                     matched_indices = []
+                    pair_ids = []
+                    pair_counter = 1
+                    
                     for idx, row in treat_df.iterrows():
                         if len(control_df) == 0: break
                         distances = np.abs(control_df['Propensity_Score'] - row['Propensity_Score'])
                         best_match_idx = distances.idxmin()
+                        
                         matched_indices.append(idx)
                         matched_indices.append(best_match_idx)
+                        
+                        # 💡 論文作業で超役立つ「ペア番号」を同時に生成
+                        pair_ids.append(f"Pair_{pair_counter}")
+                        pair_ids.append(f"Pair_{pair_counter}")
+                        pair_counter += 1
+                        
                         control_df = control_df.drop(best_match_idx)
                     
                     matched_df = psm_df.loc[matched_indices].copy()
+                    # 💡 マッチング結果にペアID列を追加
+                    matched_df['PSM_Pair_ID'] = pair_ids
+                    
                     old_len = len(df)
                     new_len = len(matched_df)
                     st.session_state.current_df = matched_df
-                    st.session_state.action_msg = f"PSM完了： {int(new_len/2)}組 のペアを作成しました。（全体行数: {old_len} ➡ {new_len}）"
+                    st.session_state.action_msg = f"PSM完了： {int(new_len/2)}組 のペアを作成し、対応する『PSM_Pair_ID』を付与しました。（全体行数: {old_len} ➡ {new_len}）"
                     st.rerun()
                 except Exception as e:
                     st.error(f"統計計算中にエラーが発生しました。データの欠損状態やデータ型をご確認ください。詳細: {e}")
