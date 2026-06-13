@@ -5,7 +5,7 @@ import statsmodels.api as sm
 
 st.set_page_config(page_title="EasyMedStats - 前処理編", layout="wide")
 st.title("EasyMedStats - 前処理・クレンジング編")
-st.write("医療データの泥臭い整形作業を、圧倒的な手軽さで完結させるアプリです。")
+st.write("医療データのクレンジングおよび前処理作業をローカル環境で完結させるアプリケーションです。")
 
 # --- コアシステム：ファイル状態の監視 ---
 if 'raw_df' not in st.session_state: st.session_state.raw_df = None
@@ -31,13 +31,12 @@ def load_data(file, skip, head):
     df = df.apply(lambda col: pd.to_numeric(col, errors='ignore') if col.dtype == 'object' else col)
     return df
 
-# 💡 リアルタイム読み込み＆F5不要システム
+# リアルタイム読み込みシステム
 if uploaded_file is None:
     st.session_state.raw_df = None
     st.session_state.current_df = None
     st.session_state.main_file_id = None
 else:
-    # ファイルが変わったか、読み込み設定の数値が変わったら自動で再読み込み！
     if (st.session_state.get('main_file_id') != uploaded_file.file_id or 
         st.session_state.get('last_skip') != skip_rows or 
         st.session_state.get('last_header') != header_rows):
@@ -49,7 +48,7 @@ else:
             st.session_state.main_file_id = uploaded_file.file_id
             st.session_state.last_skip = skip_rows
             st.session_state.last_header = header_rows
-            st.session_state.action_msg = "データを読み込みました！（設定変更を反映）"
+            st.session_state.action_msg = "データを読み込みました。（設定変更を反映）"
         except Exception as e:
             st.sidebar.error(f"読み込みエラー: {e}")
 
@@ -73,28 +72,27 @@ if st.session_state.current_df is not None:
     df = st.session_state.current_df
 
     st.sidebar.markdown("---")
-    st.sidebar.header("📊 現在のデータ状態")
+    st.sidebar.header("データステータス")
     st.sidebar.info(f"**行数:** {len(df):,} 行\n\n**列数:** {len(df.columns)} 列")
 
     st.sidebar.markdown("---")
-    st.sidebar.header("💾 エクスポート＆リセット")
+    st.sidebar.header("データ出力・リセット")
     csv = df.to_csv(index=False).encode('utf-8')
-    st.sidebar.download_button("📥 現在のデータをCSVで保存", csv, "cleaned_data.csv", "text/csv")
-    if st.sidebar.button("🔄 データを初期状態に戻す"):
+    st.sidebar.download_button("現在のデータをCSVで保存", csv, "cleaned_data.csv", "text/csv")
+    if st.sidebar.button("データを初期状態に戻す"):
         st.session_state.current_df = st.session_state.raw_df.copy()
         st.session_state.action_msg = "データを初期状態にリセットしました。"
         st.rerun()
 
     if st.session_state.action_msg:
         st.success(st.session_state.action_msg)
-        st.toast(st.session_state.action_msg, icon="✅")
+        st.toast(st.session_state.action_msg)
         st.session_state.action_msg = None
 
-    # 💡 プレビューの強化（先頭、末尾、ランダム、全てを切り替え可能）
-    st.markdown("### 👀 データプレビュー")
+    st.markdown("### データプレビュー")
     prev_col1, prev_col2 = st.columns([1, 4])
     with prev_col1:
-        prev_mode = st.radio("表示する範囲", ["最初 (Head)", "最後 (Tail)", "ランダム (Sample)", "全て (All)"])
+        prev_mode = st.radio("表示範囲", ["最初 (Head)", "最後 (Tail)", "ランダム (Sample)", "全て (All)"])
     with prev_col2:
         if "最初" in prev_mode: st.dataframe(df.head(100), use_container_width=True)
         elif "最後" in prev_mode: st.dataframe(df.tail(100), use_container_width=True)
@@ -102,20 +100,20 @@ if st.session_state.current_df is not None:
         else: st.dataframe(df, use_container_width=True)
 
     st.write("---")
-    st.subheader("🛠️ データ編集メニュー")
+    st.subheader("データ編集メニュー")
 
     tab1, tab2, tab3, tab6, tab4, tab5, tab7 = st.tabs([
-        "🧹 1. 列整理・ゴミ取り", "✂️ 2. 抽出", "🚩 3. フラグ化",
-        "➕ 4. 計算・変換", "🔄 5. 縦横変換", "🔗 6. 突合", "⚖️ 7. PSM"
+        "1. 列整理・ゴミ取り", "2. 抽出", "3. フラグ化",
+        "4. 計算・変換", "5. 縦横変換", "6. 突合", "7. PSM"
     ])
 
     # ==========================================
-    # タブ1：列整理（列名変更追加）とゴミ取り
+    # タブ1：列整理とゴミ取り
     # ==========================================
     with tab1:
         col_l, col_r = st.columns(2)
         with col_l:
-            st.markdown("### ✏️ 列名の変更")
+            st.markdown("### 列名の変更")
             rename_col = st.selectbox("名前を変えたい列", df.columns, key="ren_col")
             new_name = st.text_input("新しい列名を入力", key="ren_new")
             if st.button("列名を変更して上書きする", type="primary"):
@@ -126,8 +124,8 @@ if st.session_state.current_df is not None:
                 else: st.warning("新しい列名を入力してください。")
                 
         with col_r:
-            st.markdown("### 🗑️ 不要な列の削除")
-            cols_to_drop = st.multiselect("削除したい列をすべて選んでください", df.columns, key="drop_cols")
+            st.markdown("### 不要な列の削除")
+            cols_to_drop = st.multiselect("削除したい列を選択（複数可）", df.columns, key="drop_cols")
             if st.button("選択した列を削除して上書きする", type="primary"):
                 if cols_to_drop:
                     st.session_state.current_df = df.drop(columns=cols_to_drop)
@@ -138,9 +136,9 @@ if st.session_state.current_df is not None:
         
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("### 👥 重複データの削除")
+            st.markdown("### 重複データの削除")
             dup_col = st.selectbox("基準となる列（IDなど）", df.columns, key="dup_col")
-            keep_method = st.radio("どのデータを残すか", ["最初のデータ", "最後のデータ"], key="keep_m")
+            keep_method = st.radio("残すデータ", ["最初のデータ", "最後のデータ"], key="keep_m")
             if st.button("重複を削除して上書きする", type="primary"):
                 keep_arg = 'first' if "最初" in keep_method else 'last'
                 old_len = len(df)
@@ -148,8 +146,8 @@ if st.session_state.current_df is not None:
                 st.session_state.action_msg = f"重複削除完了： {old_len - len(st.session_state.current_df)} 件のデータを削除しました。"
                 st.rerun()
         with col2:
-            st.markdown("### 🕳️ 欠損値（空欄）の処理")
-            na_col = st.selectbox("処理したい列", df.columns, key="na_col")
+            st.markdown("### 欠損値（空欄）の処理")
+            na_col = st.selectbox("処理対象の列", df.columns, key="na_col")
             na_method = st.radio("処理方法", ["空欄がある行を削除", "平均値で埋める", "中央値で埋める", "直前の値で埋める（LOCF）"], key="na_m")
             if st.button("欠損値を処理して上書きする", type="primary"):
                 old_len = len(df)
@@ -164,13 +162,13 @@ if st.session_state.current_df is not None:
                 st.rerun()
 
     # ==========================================
-    # タブ2〜3：省略（変更なし）
+    # タブ2：抽出
     # ==========================================
     with tab2:
-        st.markdown("### 🔍 条件に合うデータだけを残す")
-        fil_col = st.selectbox("検索する列", df.columns, key="fil_col")
+        st.markdown("### 条件に合うデータのみ抽出")
+        fil_col = st.selectbox("検索対象の列", df.columns, key="fil_col")
         fil_type = st.radio("検索条件", ["キーワードを含む", "完全に一致する", "数値が〇〇以上"], key="fil_type")
-        fil_val = st.text_input("検索するキーワードや数値を入力", key="fil_val")
+        fil_val = st.text_input("検索するキーワードまたは数値を入力", key="fil_val")
         if st.button("抽出して上書きする", type="primary"):
             if fil_val:
                 if "含む" in fil_type: st.session_state.current_df = df[df[fil_col].astype(str).str.contains(fil_val, na=False)]
@@ -179,14 +177,17 @@ if st.session_state.current_df is not None:
                 st.session_state.action_msg = f"抽出完了： {len(st.session_state.current_df)} 行に絞り込みました。"
                 st.rerun()
 
+    # ==========================================
+    # タブ3：フラグ化
+    # ==========================================
     with tab3:
-        st.markdown("### 🚩 連続値のカテゴリ化 ＆ フラグ立て（1 / 0）")
+        st.markdown("### 連続値のカテゴリ化・フラグ立て（1 / 0）")
         bin_col = st.selectbox("フラグ化・カテゴリ化する数値の列", [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])], key="bin_col")
         threshold = st.number_input("基準となる数値を入力", value=65.0, key="bin_th")
         col_high, col_low = st.columns(2)
         with col_high: label_high = st.text_input("基準値【以上】の場合のラベル", value="1", key="lbl_h")
         with col_low: label_low = st.text_input("基準値【未満】の場合のラベル", value="0", key="lbl_l")
-        new_col_name = st.text_input("新しく作るフラグ列の名前", value=f"{bin_col}_Flag", key="bin_new")
+        new_col_name = st.text_input("新しく作成するフラグ列の名前", value=f"{bin_col}_Flag", key="bin_new")
         if st.button("フラグを作成して新しい列を追加する", type="primary"):
             val_high = float(label_high) if label_high.replace('.','',1).isdigit() else label_high
             val_low = float(label_low) if label_low.replace('.','',1).isdigit() else label_low
@@ -195,15 +196,15 @@ if st.session_state.current_df is not None:
             st.rerun()
 
     # ==========================================
-    # 🌟 強化版・タブ6：変数の計算・変換（一括置換）
+    # タブ4：変数の計算・変換（一括置換）
     # ==========================================
     with tab6:
-        st.markdown("### ➕ 変数の計算・変換・クリーニング")
-        calc_mode = st.radio("処理", ["A. 日付差分計算", "B. 四則演算", "C. 日付フォーマット変換", "D. データ型強制変換", "E. 文字列の置換・削除（ハイフン除去など）"])
+        st.markdown("### 変数の計算・変換・クリーニング")
+        calc_mode = st.radio("処理メニュー", ["A. 日付差分計算", "B. 四則演算", "C. 日付フォーマット変換", "D. データ型強制変換", "E. 文字列の置換・削除"])
         
         if calc_mode.startswith("A"):
-            date_end = st.selectbox("終わりの日", df.columns, key="d_end")
-            date_start = st.selectbox("始まりの日", df.columns, key="d_start")
+            date_end = st.selectbox("終了日", df.columns, key="d_end")
+            date_start = st.selectbox("開始日", df.columns, key="d_start")
             date_new_name = st.text_input("新しく作る列の名前", value="Duration_Days", key="d_new")
             if st.button("日付の差分（日数）を計算して追加する", type="primary"):
                 try:
@@ -247,7 +248,7 @@ if st.session_state.current_df is not None:
                 except Exception as e: st.error(f"変換エラー: {e}")
         elif calc_mode.startswith("D"):
             type_col = st.selectbox("型を変換したい列", df.columns, key="t_col")
-            type_to = st.radio("どの型に変換しますか？", ["文字列（IDやカテゴリとして扱う）", "数値（計算できるようにする）"])
+            type_to = st.radio("変換先の型", ["文字列（IDやカテゴリとして扱う）", "数値（計算できるようにする）"])
             if st.button("データ型を強制変換して上書きする", type="primary"):
                 try:
                     if "文字列" in type_to: st.session_state.current_df[type_col] = df[type_col].astype(str)
@@ -256,17 +257,16 @@ if st.session_state.current_df is not None:
                     st.rerun()
                 except Exception as e: st.error(f"エラー: {e}")
                 
-        # 💡 一括置換機能（全列対応）
         elif calc_mode.startswith("E"):
-            st.info("💡 10未満のセルにある「-」を空欄（NaN）にする場合は、新しい文字を空欄にしてください。")
+            st.info("データ内にある特定の記号（ハイフンなど）を一括で置換・削除できます。削除する場合は「新しい文字」を空欄にしてください。")
             all_cols = st.checkbox("すべての列を対象にする（一括置換）", value=False)
             if all_cols:
                 rep_cols = df.columns.tolist()
             else:
-                rep_cols = st.multiselect("処理したい列（複数選択可）", df.columns, key="rep_cols")
+                rep_cols = st.multiselect("処理対象の列を選択（複数選択可）", df.columns, key="rep_cols")
                 
-            rep_target = st.text_input("見つけて置き換えたい文字", value="-", key="rep_tgt")
-            rep_new = st.text_input("新しい文字（消したい場合は空欄）", key="rep_new")
+            rep_target = st.text_input("置換対象の文字", value="-", key="rep_tgt")
+            rep_new = st.text_input("新しい文字（消去する場合は空欄）", key="rep_new")
             
             if st.button("文字の置換・削除を実行して上書きする", type="primary"):
                 if rep_target and rep_cols:
@@ -279,17 +279,17 @@ if st.session_state.current_df is not None:
                     st.warning("置き換えたい列と文字を入力してください。")
 
     # ==========================================
-    # タブ4：構造変換（Pivot ＆ Melt）
+    # タブ5：構造変換（Pivot ＆ Melt）
     # ==========================================
     with tab4:
-        st.markdown("### 🔄 データの縦横変換")
+        st.markdown("### データの縦横変換")
         transform_mode = st.radio("変換の方向", [
             "A. 縦長 ➡ 横長 (Pivot)：IDごとに時間を横に並べる",
             "B. 横長 ➡ 縦長 (Melt)：複数列に分かれた属性を1列に折りたたむ（NDBデータ等で必須）"
         ])
 
         if transform_mode.startswith("A"):
-            col_id = st.selectbox("1. 固体の識別子となる列", df.columns, key="piv_id")
+            col_id = st.selectbox("1. 固体の識別子となる列（IDなど）", df.columns, key="piv_id")
             col_time = st.selectbox("2. 時間や回数を表す列", [c for c in df.columns if c != col_id], key="piv_time")
             col_value = st.selectbox("3. 横に並べ替えたい数値の列", [c for c in df.columns if c not in [col_id, col_time]], key="piv_val")
             if st.button("横持ちへ変換して上書きする", type="primary"):
@@ -300,15 +300,15 @@ if st.session_state.current_df is not None:
                     st.session_state.current_df = df_pivoted
                     st.session_state.action_msg = f"構造変換完了： {len(df_pivoted)} 行の横長データに変換しました。"
                     st.rerun()
-                except Exception as e: st.error(f"構造変換に失敗しました。詳細: {e}")
+                except Exception as e: st.error(f"構造変換に失敗しました。Excelの列名に不備がないかご確認ください。詳細: {e}")
         
         else:
-            id_vars = st.multiselect("固定して残す列（都道府県、BMI階層など）", df.columns, key="melt_id")
+            id_vars = st.multiselect("固定して残す列（都道府県、背景因子など）", df.columns, key="melt_id")
             val_vars = [c for c in df.columns if c not in id_vars]
             var_name = st.text_input("折りたたんだ列名（属性）につける新しい名前", value="属性", key="melt_var")
-            val_name = st.text_input("その数値（人数など）につける新しい名前", value="人数", key="melt_val")
+            val_name = st.text_input("その数値につける新しい名前", value="値", key="melt_val")
             
-            if st.button("縦持ちへ変換（アンピボット）して上書きする", type="primary"):
+            if st.button("縦持ちへ変換して上書きする", type="primary"):
                 if id_vars:
                     try:
                         df_melted = df.melt(id_vars=id_vars, value_vars=val_vars, var_name=var_name, value_name=val_name)
@@ -320,14 +320,14 @@ if st.session_state.current_df is not None:
                     st.warning("固定して残す列を少なくとも1つ選んでください。")
 
     # ==========================================
-    # タブ5＆7：省略（変更なし）
+    # タブ6：突合
     # ==========================================
     with tab5:
-        st.markdown("### 🔗 2つのファイルをIDで突合する（横結合）")
+        st.markdown("### 2つのファイルをIDで突合する（横結合）")
         if df_B is not None:
             col_left = st.selectbox("現在のデータ側のID", df.columns, key="join_L")
             col_right = st.selectbox("別ファイル側のID", df_B.columns, key="join_R")
-            join_how = st.radio("結合方式", ["左結合", "内部結合"])
+            join_how = st.radio("結合方式", ["左結合（メインデータを残す）", "内部結合（両方に存在するデータのみ）"])
             if st.button("突合して上書き統合する", type="primary"):
                 try:
                     how_arg = 'left' if "左結合" in join_how else 'inner'
@@ -338,13 +338,16 @@ if st.session_state.current_df is not None:
                     st.session_state.action_msg = f"結合完了： 行数 {old_rows} ➡ {len(df_merged)} になりました。"
                     st.rerun()
                 except Exception as e: st.error(f"エラー: {e}")
-        else: st.info("別ファイルをアップロードしてください。")
+        else: st.info("左側のサイドバーから結合用の別ファイルをアップロードしてください。")
 
+    # ==========================================
+    # タブ7：傾向スコアマッチング（PSM）
+    # ==========================================
     with tab7:
-        st.markdown("### ⚖️ 傾向スコアマッチング（1:1 最近傍マッチング）")
-        st.info("⚠️ 注意: 介入変数（治療の有無）は『1 と 0』で入力されている必要があります。タブ3でフラグ化しておいてください。")
-        treat_col = st.selectbox("🎯 介入変数（治療の有無: 1 or 0）", [c for c in df.columns if set(df[c].dropna().unique()).issubset({0, 1, 0.0, 1.0, '0', '1'})], key="psm_treat")
-        covar_cols = st.multiselect("⚖️ 揃えたい背景因子（共変量: 年齢、BMIなど）", [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and c != treat_col], key="psm_cov")
+        st.markdown("### 傾向スコアマッチング（1:1 最近傍マッチング）")
+        st.info("【重要】介入変数（治療の有無など）は必ず「1 と 0」の数値データで入力されている必要があります。事前にタブ3でフラグ化を完了させておいてください。")
+        treat_col = st.selectbox("介入変数（治療の有無: 1 or 0）", [c for c in df.columns if set(df[c].dropna().unique()).issubset({0, 1, 0.0, 1.0, '0', '1'})], key="psm_treat")
+        covar_cols = st.multiselect("揃えたい背景因子（共変量: 年齢、数値データなど）", [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and c != treat_col], key="psm_cov")
         
         if st.button("傾向スコアを計算し、マッチングを実行して上書きする", type="primary"):
             if treat_col and len(covar_cols) > 0:
@@ -372,12 +375,12 @@ if st.session_state.current_df is not None:
                     old_len = len(df)
                     new_len = len(matched_df)
                     st.session_state.current_df = matched_df
-                    st.session_state.action_msg = f"PSM完了： {int(new_len/2)}組 のペアを作成しました！（全体行数: {old_len} ➡ {new_len}）"
+                    st.session_state.action_msg = f"PSM完了： {int(new_len/2)}組 のペアを作成しました。（全体行数: {old_len} ➡ {new_len}）"
                     st.rerun()
                 except Exception as e:
-                    st.error(f"エラーが発生しました。詳細: {e}")
+                    st.error(f"統計計算中にエラーが発生しました。データの欠損状態やデータ型をご確認ください。詳細: {e}")
             else:
                 st.warning("介入変数と、少なくとも1つの背景因子を選択してください。")
 
 else:
-    st.info("👈 左のサイドバーからメインデータをアップロードして開始してください。")
+    st.info("左のサイドバーからメインデータ（CSVまたはExcel）をアップロードして開始してください。")
