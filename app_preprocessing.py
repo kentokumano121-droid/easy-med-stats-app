@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
+import unicodedata  # 👈 これを追加
 
 st.set_page_config(page_title="EasyMedStats - 前処理編", layout="wide")
 st.title("EasyMedStats - 前処理・クレンジング編")
@@ -212,7 +213,7 @@ if st.session_state.current_df is not None:
     # ==========================================
     elif selected_tab == "4. 計算・変換":
         st.markdown("### 変数の計算・変換・クリーニング")
-        calc_mode = st.radio("処理メニュー", ["A. 日付差分計算", "B. 四則演算", "C. 日付フォーマット変換", "D. データ型強制変換", "E. 文字列の置換・削除"])
+        calc_mode = st.radio("処理メニュー", ["A. 日付差分計算", "B. 四則演算", "C. 日付フォーマット変換", "D. データ型強制変換", "E. 文字列の置換・削除", "F. 全角・半角の統一（表記揺れ修正）"])
         
         if calc_mode.startswith("A"):
             date_end = st.selectbox("終了日", df.columns, key="d_end")
@@ -297,6 +298,26 @@ if st.session_state.current_df is not None:
                     st.rerun()
                 else:
                     st.warning("置き換えたい列と文字を入力してください。")
+
+        elif calc_mode.startswith("F"):
+            st.info("全角の英数字（１２３、ＡＢＣなど）を半角に統一し、突合エラーの原因となる表記揺れを瞬時に修正します。")
+            all_zen_cols = st.checkbox("すべての列を対象にする", value=False, key="zen_all")
+            if all_zen_cols:
+                zen_cols = df.columns.tolist()
+            else:
+                zen_cols = st.multiselect("処理対象の列を選択（複数選択可）", df.columns, key="zen_cols")
+                
+            if st.button("全角・半角を統一して上書きする", type="primary"):
+                if zen_cols:
+                    try:
+                        for col in zen_cols:
+                            # NFKC正規化で、全角英数字を半角に綺麗に統一
+                            st.session_state.current_df[col] = df[col].astype(str).apply(lambda x: unicodedata.normalize('NFKC', x) if x not in ['nan', 'None', ''] else np.nan)
+                        st.session_state.action_msg = f"表記揺れ修正完了： {len(zen_cols)} 列の全角・半角を統一しました。"
+                        st.rerun()
+                    except Exception as e: st.error(f"エラー: {e}")
+                else:
+                    st.warning("処理したい列を選択してください。")
 
     # ==========================================
     # 5. 構造変換（Pivot ＆ Melt）
