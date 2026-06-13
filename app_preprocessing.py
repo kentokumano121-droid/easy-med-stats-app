@@ -266,7 +266,9 @@ if st.session_state.current_df is not None:
                     if "＋" in math_op: st.session_state.current_df[math_new_name] = val_a + val_b
                     elif "－" in math_op: st.session_state.current_df[math_new_name] = val_a - val_b
                     elif "×" in math_op: st.session_state.current_df[math_new_name] = val_a * val_b
-                    elif "÷" in math_op: st.session_state.current_df[math_new_name] = val_a / val_b
+                    elif "÷" in math_op:
+                        if np.any(val_b == 0): raise ValueError("0で割ることはできません（データ内に0が含まれています）。")
+                        st.session_state.current_df[math_new_name] = val_a / val_b
                     st.session_state.action_msg = f"四則演算完了： 新しい列「{math_new_name}」を作成しました。"
                     st.rerun()
                 except Exception as e: st.error(f"計算エラーが発生しました。データの値をご確認ください。詳細: {e}")
@@ -444,6 +446,10 @@ if st.session_state.current_df is not None:
                     for c in covar_cols:
                         psm_df[c] = pd.to_numeric(psm_df[c], errors='coerce')
                     psm_df = psm_df.dropna(subset=[treat_col] + covar_cols)
+                    
+                    if not set(psm_df[treat_col].unique()).issubset({0, 1, 0.0, 1.0}):
+                        raise ValueError("介入変数は「1」と「0」のみである必要があります。事前にフラグ化を完了してください。")
+                        
                     # --- この下（X = sm.add_constant(psm_df[covar_cols]) 以降）はそのまま ---
                     X = sm.add_constant(psm_df[covar_cols])
                     y = psm_df[treat_col]
