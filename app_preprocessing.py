@@ -96,9 +96,6 @@ if st.session_state.current_df is not None:
 
     st.markdown("### データプレビュー")
 
-    # 💡 プレビューの強化（先頭、末尾、ランダム、全てを切り替え可能）
-    st.markdown("### 👀 データプレビュー")
-
     # 🔽🔽🔽 ここから追加 🔽🔽🔽
     with st.expander("各列の現在のデータ型（数値 / 文字列）を確認する", expanded=False):
         type_info = []
@@ -111,9 +108,6 @@ if st.session_state.current_df is not None:
         st.dataframe(pd.DataFrame(type_info), use_container_width=True)
     # 🔼🔼🔼 ここまで追加 🔼🔼🔼
 
-    prev_col1, prev_col2 = st.columns([1, 4])
-    with prev_col1:
-    
     prev_col1, prev_col2 = st.columns([1, 4])
     with prev_col1:
         prev_mode = st.radio("表示範囲", ["最初 (Head)", "最後 (Tail)", "ランダム (Sample)", "全て (All)"])
