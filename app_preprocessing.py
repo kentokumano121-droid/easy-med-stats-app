@@ -226,7 +226,7 @@ if st.session_state.current_df is not None:
     # ==========================================
     elif selected_tab == "4. 計算・変換":
         st.markdown("### 変数の計算・変換・クリーニング")
-        calc_mode = st.radio("処理メニュー", ["A. 日付差分計算", "B. 四則演算", "C. 日付フォーマット変換", "D. データ型強制変換", "E. 文字列の置換・削除", "F. 全角・半角の統一（表記揺れ修正）", "G. 前後空白削除"])
+        calc_mode = st.radio("処理メニュー", ["A. 日付差分計算", "B. 四則演算", "C. 日付フォーマット変換", "D. データ型強制変換", "E. 文字列の置換・削除", "F. 全角・半角の統一（表記揺れ修正）"])
         
         if calc_mode.startswith("A"):
             date_end = st.selectbox("終了日", df.columns, key="d_end")
@@ -336,44 +336,6 @@ if st.session_state.current_df is not None:
                     except Exception as e: st.error(f"エラー: {e}")
                 else:
                     st.warning("処理したい列を選択してください。")
-
-        elif calc_mode.startswith("G"):
-            st.info("前後の半角・全角スペースを削除します。")
-            all_space_cols = st.checkbox(
-                "すべての列を対象にする",
-                value=False,
-                key="space_all"
-            )
-
-        if all_space_cols:
-            space_cols = df.columns.tolist()
-        else:
-            space_cols = st.multiselect(
-                "処理対象の列",
-                df.columns,
-                key="space_cols"
-            )
-
-        if st.button(
-            "空白を削除して上書きする",
-            type="primary"
-        ):
-
-            if space_cols:
-
-                for col in space_cols:
-
-                    st.session_state.current_df[col] = (
-                        df[col]
-                        .astype(str)
-                        .str.strip()
-                    )
-
-                st.session_state.action_msg = (
-                    f"{len(space_cols)}列の空白を削除しました。"
-                )
-
-                st.rerun()
 
     # ==========================================
     # 5. 構造変換（Pivot ＆ Melt）
