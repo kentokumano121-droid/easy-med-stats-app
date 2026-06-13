@@ -68,6 +68,10 @@ if uploaded_file_B is not None:
         uploaded_file_B.seek(0)
         df_B = load_data(uploaded_file_B, skip_rows_b, header_rows_b)
 
+if df_B is not None:
+    st.sidebar.markdown("**📂 結合用データのプレビュー**")
+    st.sidebar.dataframe(df_B.head(3), use_container_width=True)
+
 if st.session_state.current_df is not None:
     df = st.session_state.current_df
 
@@ -185,7 +189,7 @@ if st.session_state.current_df is not None:
     # ==========================================
     with tab3:
         st.markdown("### 連続値のカテゴリ化・フラグ立て（1 / 0）")
-        bin_col = st.selectbox("フラグ化・カテゴリ化する数値の列", [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])], key="bin_col")
+        bin_col = st.selectbox("フラグ化・カテゴリ化する列", df.columns, key="bin_col")
         threshold = st.number_input("基準となる数値を入力", value=65.0, key="bin_th")
         col_high, col_low = st.columns(2)
         with col_high: label_high = st.text_input("基準値【以上】の場合のラベル", value="1", key="lbl_h")
@@ -194,7 +198,10 @@ if st.session_state.current_df is not None:
         if st.button("フラグを作成して新しい列を追加する", type="primary"):
             val_high = float(label_high) if label_high.replace('.','',1).isdigit() else label_high
             val_low = float(label_low) if label_low.replace('.','',1).isdigit() else label_low
-            st.session_state.current_df[new_col_name] = np.where(df[bin_col] >= threshold, val_high, val_low)
+            
+            # 裏側で一時的に数値に変換してエラーを防ぐ
+            temp_series = pd.to_numeric(df[bin_col], errors='coerce')
+            st.session_state.current_df[new_col_name] = np.where(temp_series >= threshold, val_high, val_low)
             st.session_state.action_msg = f"フラグ化完了： 新しい列「{new_col_name}」を追加しました。"
             st.rerun()
 
