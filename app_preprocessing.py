@@ -143,6 +143,13 @@ if st.session_state.current_df is not None:
                     st.session_state.action_msg = f"列名変更完了： 「{rename_col}」を「{new_name}」に変更しました。"
                     st.rerun()
                 else: st.warning("新しい列名を入力してください。")
+
+            st.markdown("### 列名の一括クリーニング")
+            st.info("すべての列名から余分な空白や改行を自動で削除し、扱いやすくします。")
+            if st.button("列名を自動クリーニングする", type="primary"):
+                st.session_state.current_df.columns = st.session_state.current_df.columns.str.strip().str.replace(r'[\n\r]', '', regex=True)
+                st.session_state.action_msg = "列名クリーニング完了： すべての列名を整理しました。"
+                st.rerun()
                 
         with col_r:
             st.markdown("### 不要な列の削除")
@@ -226,7 +233,7 @@ if st.session_state.current_df is not None:
     # ==========================================
     elif selected_tab == "4. 計算・変換":
         st.markdown("### 変数の計算・変換・クリーニング")
-        calc_mode = st.radio("処理メニュー", ["A. 日付差分計算", "B. 四則演算", "C. 日付フォーマット変換", "D. データ型強制変換", "E. 文字列の置換・削除", "F. 全角・半角の統一（表記揺れ修正）"])
+        calc_mode = st.radio("処理メニュー", ["A. 日付差分計算", "B. 四則演算", "C. 日付フォーマット変換", "D. データ型強制変換", "E. 文字列の置換・削除", "F. 全角・半角の統一（表記揺れ修正）", "G. 前後の空白（スペース）削除"])
         
         if calc_mode.startswith("A"):
             date_end = st.selectbox("終了日", df.columns, key="d_end")
@@ -336,6 +343,19 @@ if st.session_state.current_df is not None:
                     except Exception as e: st.error(f"エラー: {e}")
                 else:
                     st.warning("処理したい列を選択してください。")
+
+        elif calc_mode.startswith("G"):
+            st.info("データの前後に紛れ込んだ余分な空白（スペース）を一括で削除します。")
+            strip_cols = st.multiselect("処理対象の列を選択（複数選択可）", df.columns, key="strp_cols")
+            if st.button("空白を削除して上書きする", type="primary"):
+                if strip_cols:
+                    for col in strip_cols:
+                        st.session_state.current_df[col] = df[col].astype(str).str.strip()
+                        # 空白だけだったセルはNaNに戻す
+                        st.session_state.current_df[col] = st.session_state.current_df[col].replace(['', 'nan', 'None'], np.nan)
+                    st.session_state.action_msg = f"空白削除完了： {len(strip_cols)} 列の前後スペースを削除しました。"
+                    st.rerun()
+                else: st.warning("処理したい列を選択してください。")
 
     # ==========================================
     # 5. 構造変換（Pivot ＆ Melt）
