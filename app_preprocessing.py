@@ -9,11 +9,17 @@ st.set_page_config(page_title="EasyMedStats - 前処理編", layout="wide")
 st.title("EasyMedStats - 前処理・クレンジング編")
 st.write("医療データのクレンジングおよび前処理作業をローカル環境で完結させるアプリケーションです。")
 
-# --- コアシステム：ファイル状態の監視 ---
+# --- コアシステム：ファイル状態の監視とUndo機能 ---
 if 'raw_df' not in st.session_state: st.session_state.raw_df = None
 if 'current_df' not in st.session_state: st.session_state.current_df = None
 if 'action_msg' not in st.session_state: st.session_state.action_msg = None
 if 'smd_result' not in st.session_state: st.session_state.smd_result = None
+if 'history' not in st.session_state: st.session_state.history = []
+
+def save_history():
+    st.session_state.history.append(st.session_state.current_df.copy())
+    if len(st.session_state.history) > 10:
+        st.session_state.history.pop(0)
 
 # --- サイドバー：読み込み設定 ---
 st.sidebar.header("1. メインデータの読み込み")
@@ -56,6 +62,7 @@ if uploaded_file is None:
     st.session_state.current_df = None
     st.session_state.main_file_sig = None
     st.session_state.smd_result = None
+    st.session_state.history = []
 else:
     current_sig = (uploaded_file.name, uploaded_file.size)
     if (st.session_state.get('main_file_sig') != current_sig or 
@@ -71,6 +78,7 @@ else:
             st.session_state.last_header = header_rows
             st.session_state.action_msg = "データを読み込みました。"
             st.session_state.smd_result = None
+            st.session_state.history = []
         except Exception as e:
             st.sidebar.error(f"読み込みエラー: {e}")
 
@@ -100,12 +108,23 @@ if st.session_state.current_df is not None:
 
     st.sidebar.markdown("---")
     st.sidebar.header("データ出力・リセット")
+    
+    if st.sidebar.button("↩️ 1つ前の状態に戻す (Undo)"):
+        if len(st.session_state.history) > 0:
+            st.session_state.current_df = st.session_state.history.pop()
+            st.session_state.action_msg = "1つ前の状態に戻しました。"
+            st.rerun()
+        else:
+            st.sidebar.warning("これ以上戻せません。")
+
     csv = df.to_csv(index=False).encode('utf-8-sig')
     st.sidebar.download_button("現在のデータをCSVで保存", csv, "cleaned_data.csv", "text/csv")
+    
     if st.sidebar.button("データを初期状態に戻す"):
         st.session_state.current_df = st.session_state.raw_df.copy()
         st.session_state.action_msg = "データを初期状態にリセットしました。"
         st.session_state.smd_result = None
+        st.session_state.history = []
         st.rerun()
 
     if st.session_state.action_msg:
@@ -138,17 +157,18 @@ if st.session_state.current_df is not None:
                     if new_name in df.columns:
                         st.error("⚠️ エラー：既に存在する列名です。別の名前を指定してください。")
                     else:
+                        save_history()
                         st.session_state.current_df = df.rename(columns={rename_col: new_name})
                         st.session_state.action_msg = f"列名変更完了： 「{rename_col}」を「{new_name}」に変更しました。"
                         st.rerun()
 
             st.markdown("### 列名の一括クリーニング")
             if st.button("列名を自動クリーニングする", type="primary"):
-                # 🌟【追加】クリーニング後の列名重複チェック
                 cleaned_cols = df.columns.str.strip().str.replace(r'[\n\r]', '', regex=True)
                 if cleaned_cols.duplicated().any():
                     st.error("⚠️ エラー：クリーニングの結果、同じ名前の列が複数できてしまいます。先にタブの「列名の変更」で重複しないように名前を変えてください。")
                 else:
+                    save_history()
                     st.session_state.current_df.columns = cleaned_cols
                     st.session_state.action_msg = "列名クリーニング完了： すべての列名を整理しました。"
                     st.rerun()
@@ -158,6 +178,7 @@ if st.session_state.current_df is not None:
             cols_to_drop = st.multiselect("削除したい列を選択（複数可）", df.columns, key="drop_cols")
             if st.button("選択した列を削除して上書きする", type="primary"):
                 if cols_to_drop:
+                    save_history()
                     st.session_state.current_df = df.drop(columns=cols_to_drop)
                     st.session_state.action_msg = f"列削除完了： {len(cols_to_drop)} 個の列を削除しました。"
                     st.rerun()
@@ -170,6 +191,7 @@ if st.session_state.current_df is not None:
             dup_cols = st.multiselect("重複判定の基準とする列", df.columns, key="dup_col")
             keep_method = st.radio("残すデータ", ["最初のデータ", "最後のデータ"], key="keep_m")
             if st.button("重複を削除して上書きする", type="primary"):
+                save_history()
                 keep_arg = 'first' if "最初" in keep_method else 'last'
                 old_len = len(df)
                 if len(dup_cols) == 0: st.session_state.current_df = df.drop_duplicates(keep=keep_arg)
@@ -186,23 +208,25 @@ if st.session_state.current_df is not None:
                 if missing_rate > 0.3 and "削除" not in na_method:
                     st.warning(f"⚠️ 注意: 「{na_col}」の欠損率が {missing_rate*100:.1f}% です。30%以上の補完は統計的にリスクがあります。")
 
+                save_history()
                 if "削除" in na_method:
                     st.session_state.current_df = df.dropna(subset=[na_col])
                     st.session_state.action_msg = f"欠損値削除完了： {old_len - len(st.session_state.current_df)} 行を削除しました。"
                     st.rerun()
                 else:
-                    is_numeric = pd.api.types.is_numeric_dtype(df[na_col])
+                    # 🌟【修正】文字が混ざっていても安全に数値化してから平均/中央値を計算
+                    temp = pd.to_numeric(df[na_col], errors='coerce')
                     if "平均値" in na_method:
-                        if is_numeric: st.session_state.current_df[na_col] = df[na_col].fillna(df[na_col].mean())
-                        else: st.error("⚠️ 平均値は「数値型」でのみ計算可能です。")
+                        st.session_state.current_df[na_col] = temp.fillna(temp.mean())
+                        st.session_state.action_msg = f"欠損値の穴埋め完了： 「{na_col}」を平均値で補完しました。"
+                        st.rerun()
                     elif "中央値" in na_method:
-                        if is_numeric: st.session_state.current_df[na_col] = df[na_col].fillna(df[na_col].median())
-                        else: st.error("⚠️ 中央値は「数値型」でのみ計算可能です。")
+                        st.session_state.current_df[na_col] = temp.fillna(temp.median())
+                        st.session_state.action_msg = f"欠損値の穴埋め完了： 「{na_col}」を中央値で補完しました。"
+                        st.rerun()
                     elif "直前" in na_method: 
                         st.session_state.current_df[na_col] = df[na_col].ffill()
-                    
-                    if "直前" in na_method or is_numeric:
-                        st.session_state.action_msg = f"欠損値の穴埋め完了： 「{na_col}」を補完しました。"
+                        st.session_state.action_msg = f"欠損値の穴埋め完了： 「{na_col}」を直前の値で補完しました。"
                         st.rerun()
 
     # ==========================================
@@ -216,18 +240,20 @@ if st.session_state.current_df is not None:
         if st.button("抽出して上書きする", type="primary"):
             if fil_val:
                 if "含む" in fil_type: 
+                    save_history()
                     st.session_state.current_df = df[df[fil_col].astype(str).str.contains(fil_val, na=False)]
                     st.session_state.action_msg = f"抽出完了： {len(st.session_state.current_df)} 行に絞り込みました。"
                     st.rerun()
                 elif "完全" in fil_type: 
+                    save_history()
                     st.session_state.current_df = df[df[fil_col].astype(str) == fil_val]
                     st.session_state.action_msg = f"抽出完了： {len(st.session_state.current_df)} 行に絞り込みました。"
                     st.rerun()
                 elif "以上" in fil_type: 
-                    # 🌟【追加】「以上」で文字が入力された場合のクラッシュ防止
                     try:
                         thresh_val = float(fil_val)
                         temp_col = pd.to_numeric(df[fil_col], errors='coerce')
+                        save_history()
                         st.session_state.current_df = df[temp_col >= thresh_val]
                         st.session_state.action_msg = f"抽出完了： {len(st.session_state.current_df)} 行に絞り込みました。"
                         st.rerun()
@@ -247,15 +273,14 @@ if st.session_state.current_df is not None:
         new_col_name = st.text_input("新しく作成するフラグ列の名前", value=f"{bin_col}_Flag", key="bin_new")
         if st.button("フラグを作成して新しい列を追加する", type="primary"):
             def is_number(x):
-                try:
-                    float(x)
-                    return True
-                except ValueError:
-                    return False
+                try: float(x); return True
+                except ValueError: return False
                     
             val_high = float(label_high) if is_number(label_high) else label_high
             val_low = float(label_low) if is_number(label_low) else label_low
             temp_series = pd.to_numeric(df[bin_col], errors='coerce')
+            
+            save_history()
             st.session_state.current_df[new_col_name] = np.where(temp_series >= threshold, val_high, val_low)
             st.session_state.action_msg = f"フラグ化完了： 新しい列「{new_col_name}」を追加しました。"
             st.rerun()
@@ -275,6 +300,7 @@ if st.session_state.current_df is not None:
                 try:
                     end_dt = pd.to_datetime(df[date_end], errors='coerce')
                     start_dt = pd.to_datetime(df[date_start], errors='coerce')
+                    save_history()
                     st.session_state.current_df[date_new_name] = (end_dt - start_dt).dt.days
                     st.session_state.action_msg = f"日付計算完了： 新しい列「{date_new_name}」を作成しました。"
                     st.rerun()
@@ -292,6 +318,7 @@ if st.session_state.current_df is not None:
             if st.button("数式を計算して新しい列を追加する", type="primary"):
                 try:
                     val_a = pd.to_numeric(df[math_col_a], errors='coerce')
+                    save_history()
                     if "＋" in math_op: st.session_state.current_df[math_new_name] = val_a + val_b
                     elif "－" in math_op: st.session_state.current_df[math_new_name] = val_a - val_b
                     elif "×" in math_op: st.session_state.current_df[math_new_name] = val_a * val_b
@@ -331,6 +358,7 @@ if st.session_state.current_df is not None:
                         except: return pd.NaT
 
                     parsed = df[date_format_col].apply(parse_mixed_date)
+                    save_history()
                     st.session_state.current_df[date_format_new] = parsed.dt.strftime('%Y-%m-%d')
                     st.session_state.action_msg = f"日付変換完了： 「{date_format_new}」を変換しました。"
                     st.rerun()
@@ -341,6 +369,7 @@ if st.session_state.current_df is not None:
             if st.button("データ型を強制変換して上書きする", type="primary"):
                 if type_cols:
                     try:
+                        save_history()
                         for col in type_cols:
                             if "文字列" in type_to: st.session_state.current_df[col] = df[col].astype(str)
                             else: st.session_state.current_df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -355,6 +384,7 @@ if st.session_state.current_df is not None:
             rep_new = st.text_input("新しい文字（消去する場合は空欄）", key="rep_new")
             if st.button("文字の置換・削除を実行して上書きする", type="primary"):
                 if rep_target and rep_cols:
+                    save_history()
                     for col in rep_cols:
                         st.session_state.current_df[col] = df[col].astype(str).str.replace(rep_target, rep_new, regex=False)
                         st.session_state.current_df[col] = st.session_state.current_df[col].replace(['', 'nan', 'None'], np.nan)
@@ -366,6 +396,7 @@ if st.session_state.current_df is not None:
             else: zen_cols = st.multiselect("処理対象の列を選択", df.columns, key="zen_cols")
             if st.button("全角・半角を統一して上書きする", type="primary"):
                 if zen_cols:
+                    save_history()
                     for col in zen_cols: st.session_state.current_df[col] = df[col].astype(str).apply(lambda x: unicodedata.normalize('NFKC', x) if x not in ['nan', 'None', ''] else np.nan)
                     st.session_state.action_msg = "表記揺れ修正完了しました。"
                     st.rerun()
@@ -373,6 +404,7 @@ if st.session_state.current_df is not None:
             strip_cols = st.multiselect("処理対象の列を選択", df.columns, key="strp_cols")
             if st.button("空白を削除して上書きする", type="primary"):
                 if strip_cols:
+                    save_history()
                     for col in strip_cols:
                         st.session_state.current_df[col] = df[col].astype(str).str.strip()
                         st.session_state.current_df[col] = st.session_state.current_df[col].replace(['', 'nan', 'None'], np.nan)
@@ -391,14 +423,17 @@ if st.session_state.current_df is not None:
             col_time = st.selectbox("2. 時間や回数を表す列", [c for c in df.columns if c != col_id], key="piv_time")
             col_value = st.selectbox("3. 横に並べ替えたい数値の列", [c for c in df.columns if c not in [col_id, col_time]], key="piv_val")
             if st.button("横持ちへ変換して上書きする", type="primary"):
+                save_history()
+                # 🌟【修正】pivot_table で aggfunc='first' を使い、重複による強制クラッシュを回避
+                df_pivoted = df.pivot_table(index=col_id, columns=col_time, values=col_value, aggfunc='first')
+                df_pivoted.columns = [f"{col_value}_{col}" for col in df_pivoted.columns]
+                st.session_state.current_df = df_pivoted.reset_index()
+                
                 if df.duplicated(subset=[col_id, col_time]).any():
-                    st.error("⚠️ 同一の『個体ID』と『時間・回数』に重複データがあります。先にタブ1の重複削除を行ってください。")
-                else:
-                    df_pivoted = df.pivot(index=col_id, columns=col_time, values=col_value)
-                    df_pivoted.columns = [f"{col_value}_{col}" for col in df_pivoted.columns]
-                    st.session_state.current_df = df_pivoted.reset_index()
-                    st.session_state.action_msg = "構造変換完了しました。"
-                    st.rerun()
+                    st.warning("⚠️ 注意：同一の『個体ID』と『時間・回数』に重複データが存在したため、最初のデータを優先して変換しました。必要に応じてタブ1で重複を整理してください。")
+                
+                st.session_state.action_msg = "構造変換完了しました。"
+                st.rerun()
         else:
             id_vars = st.multiselect("固定して残す列（都道府県、背景因子など）", df.columns, key="melt_id")
             val_vars = [c for c in df.columns if c not in id_vars]
@@ -406,6 +441,7 @@ if st.session_state.current_df is not None:
             val_name = st.text_input("その数値につける新しい名前", value="値", key="melt_val")
             if st.button("縦持ちへ変換して上書きする", type="primary"):
                 if id_vars:
+                    save_history()
                     st.session_state.current_df = df.melt(id_vars=id_vars, value_vars=val_vars, var_name=var_name, value_name=val_name)
                     st.session_state.action_msg = "構造変換完了しました。"
                     st.rerun()
@@ -423,6 +459,7 @@ if st.session_state.current_df is not None:
                 if df[col_left].duplicated().any() or df_B[col_right].duplicated().any():
                     st.warning("⚠️ 注意：指定したID列に重複データが存在します（多対多結合）。行数が想定以上に増加する可能性があるため、結合後のデータ行数をご確認ください。")
                 
+                save_history()
                 how_arg = 'left' if "左結合" in join_how else 'inner'
                 df_merged = pd.merge(df, df_B, left_on=col_left, right_on=col_right, how=how_arg)
                 if col_left != col_right and col_right in df_merged.columns: df_merged = df_merged.drop(columns=[col_right])
@@ -432,11 +469,14 @@ if st.session_state.current_df is not None:
         else: st.info("左側のサイドバーから結合用の別ファイルをアップロードしてください。")
 
     # ==========================================
-    # 7. PSM (大改修・順番依存バイアス解消版)
+    # 7. PSM
     # ==========================================
     elif selected_tab == "7. PSM":
         st.markdown("### 傾向スコアマッチング（1:1 最近傍マッチング・キャリパー対応）")
-        st.info("※カテゴリ変数（性別など）は自動でダミー変数化されて計算されます。")
+        
+        st.warning("⚠️ 注意: 傾向スコアマッチングは観察研究における既知の交絡因子を調整する手法の一つですが、未知の交絡を完全に除去するものではありません。")
+        st.info("※カテゴリ変数（性別など）は自動でダミー変数化されて計算されます。連続変数のSMDも自動計算されます。")
+        
         treat_col = st.selectbox("介入変数（治療の有無: 1 or 0）", df.columns, key="psm_treat")
         covar_cols = st.multiselect("揃えたい背景因子（共変量: 数値、または性別などのカテゴリ）", [c for c in df.columns if c != treat_col], key="psm_cov")
         
@@ -468,8 +508,7 @@ if st.session_state.current_df is not None:
                     
                     caliper = max(0.2 * psm_df_smd['Propensity_Score'].std(), 0.01)
                     
-                    # 🌟【バグ修正】Greedy Matchingの順番依存バイアスを消すため、治療群をランダムシャッフル
-                    treat_df = psm_df_smd[psm_df_smd[treat_col] == 1].sample(frac=1, random_state=None).copy()
+                    treat_df = psm_df_smd[psm_df_smd[treat_col] == 1].sample(frac=1, random_state=42).copy()
                     control_df = psm_df_smd[psm_df_smd[treat_col] == 0].copy()
                     
                     matched_indices = []
@@ -508,6 +547,7 @@ if st.session_state.current_df is not None:
                         
                         smd_data.append({"共変量": c, "マッチ前 SMD": round(smd_pre, 3), "マッチ後 SMD": round(smd_post, 3)})
                     
+                    save_history()
                     st.session_state.smd_result = pd.DataFrame(smd_data)
                     st.session_state.current_df = matched_df
                     st.session_state.action_msg = f"PSM完了： {int(len(matched_df)/2)}組のペアを作成しました。（キャリパー: {caliper:.4f}）"
@@ -518,5 +558,6 @@ if st.session_state.current_df is not None:
         if st.session_state.smd_result is not None:
             st.success("✅ マッチングが完了しました。共変量のバランス（SMD）は以下の通りです。一般的にSMD < 0.1 であればバランスが取れているとされます。")
             st.dataframe(st.session_state.smd_result, use_container_width=True)
+
 else:
     st.info("左のサイドバーからメインデータをアップロードして開始してください。")
