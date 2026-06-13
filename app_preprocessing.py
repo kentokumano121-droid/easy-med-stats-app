@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
-import unicodedata  # 👈 これを追加
+import unicodedata
+from statsmodels.tools.sm_exceptions import PerfectSeparationError # 👈 専用エラーをインポート
 
 st.set_page_config(page_title="EasyMedStats - 前処理編", layout="wide")
 st.title("EasyMedStats - 前処理・クレンジング編")
@@ -36,9 +37,10 @@ def load_data(file, skip, head):
 if uploaded_file is None:
     st.session_state.raw_df = None
     st.session_state.current_df = None
-    st.session_state.main_file_id = None
+    st.session_state.main_file_name = None  # 👈 id から name に変更
 else:
-    if (st.session_state.get('main_file_id') != uploaded_file.file_id or 
+    # 🌟 file_id を name に変更して環境依存のクラッシュを完全防止
+    if (st.session_state.get('main_file_name') != uploaded_file.name or 
         st.session_state.get('last_skip') != skip_rows or 
         st.session_state.get('last_header') != header_rows):
         
@@ -46,7 +48,7 @@ else:
             df = load_data(uploaded_file, skip_rows, header_rows)
             st.session_state.raw_df = df.copy()
             st.session_state.current_df = df.copy()
-            st.session_state.main_file_id = uploaded_file.file_id
+            st.session_state.main_file_name = uploaded_file.name  # 👈 id から name に変更
             st.session_state.last_skip = skip_rows
             st.session_state.last_header = header_rows
             st.session_state.action_msg = "データを読み込みました。（設定変更を反映）"
@@ -55,13 +57,14 @@ else:
 
 df_B = None
 if uploaded_file_B is not None:
-    if (st.session_state.get('sub_file_id') != uploaded_file_B.file_id or 
+    # 🌟 file_id を name に変更して安全化
+    if (st.session_state.get('sub_file_name') != uploaded_file_B.name or 
         st.session_state.get('last_skip_b') != skip_rows_b or 
         st.session_state.get('last_header_b') != header_rows_b):
         try:
             uploaded_file_B.seek(0)
             df_B = load_data(uploaded_file_B, skip_rows_b, header_rows_b)
-            st.session_state.sub_file_id = uploaded_file_B.file_id
+            st.session_state.sub_file_name = uploaded_file_B.name  # 👈 id から name に変更
             st.session_state.last_skip_b = skip_rows_b
             st.session_state.last_header_b = header_rows_b
         except Exception as e: st.sidebar.error(f"エラー: {e}")
@@ -82,7 +85,9 @@ if st.session_state.current_df is not None:
 
     st.sidebar.markdown("---")
     st.sidebar.header("データ出力・リセット")
-    csv = df.to_csv(index=False).encode('utf-8')
+    
+    # 🌟 日本のExcelユーザー向けに文字化けを完全防止する設定
+    csv = df.to_csv(index=False).encode('utf-8-sig')
     st.sidebar.download_button("現在のデータをCSVで保存", csv, "cleaned_data.csv", "text/csv")
     if st.sidebar.button("データを初期状態に戻す"):
         st.session_state.current_df = st.session_state.raw_df.copy()
@@ -96,17 +101,13 @@ if st.session_state.current_df is not None:
 
     st.markdown("### データプレビュー")
 
-    # 🔽🔽🔽 ここから追加 🔽🔽🔽
     with st.expander("各列の現在のデータ型（数値 / 文字列）を確認する", expanded=False):
         type_info = []
         for c in df.columns:
-            if pd.api.types.is_numeric_dtype(df[c]):
-                status = "数値型 (Numeric)"
-            else:
-                status = "文字列型 (String/Object) ※一部計算で使えない可能性があります"
+            if pd.api.types.is_numeric_dtype(df[c]): status = "数値型 (Numeric)"
+            else: status = "文字列型 (String/Object) ※一部計算で使えない可能性があります"
             type_info.append({"列名": c, "現在の状態": status})
         st.dataframe(pd.DataFrame(type_info), use_container_width=True)
-    # 🔼🔼🔼 ここまで追加 🔼🔼🔼
 
     prev_col1, prev_col2 = st.columns([1, 4])
     with prev_col1:
@@ -119,7 +120,6 @@ if st.session_state.current_df is not None:
 
     st.write("---")
     
-    # 💡 ここが最大の変更点：タブの代わりに「横並びのラジオボタン」を使って状態を記憶させる
     selected_tab = st.radio(
         "データ編集メニュー", 
         ["1. 列整理・ゴミ取り", "2. 抽出", "3. フラグ化", "4. 計算・変換", "5. 縦横変換", "6. 突合", "7. PSM"],
@@ -170,10 +170,8 @@ if st.session_state.current_df is not None:
             if st.button("重複を削除して上書きする", type="primary"):
                 keep_arg = 'first' if "最初" in keep_method else 'last'
                 old_len = len(df)
-                if len(dup_cols) == 0:
-                    st.session_state.current_df = df.drop_duplicates(keep=keep_arg)
-                else:
-                    st.session_state.current_df = df.drop_duplicates(subset=dup_cols, keep=keep_arg)
+                if len(dup_cols) == 0: st.session_state.current_df = df.drop_duplicates(keep=keep_arg)
+                else: st.session_state.current_df = df.drop_duplicates(subset=dup_cols, keep=keep_arg)
                 st.session_state.action_msg = f"重複削除完了： {old_len - len(st.session_state.current_df)} 件のデータを削除しました。"
                 st.rerun()
         with col2:
@@ -205,6 +203,7 @@ if st.session_state.current_df is not None:
                 if "含む" in fil_type: st.session_state.current_df = df[df[fil_col].astype(str).str.contains(fil_val, na=False)]
                 elif "完全" in fil_type: st.session_state.current_df = df[df[fil_col].astype(str) == fil_val]
                 elif "以上" in fil_type: 
+                    # 🌟 文字が混ざった列でも数値抽出でクラッシュしない安全設計
                     temp_col = pd.to_numeric(df[fil_col], errors='coerce')
                     st.session_state.current_df = df[temp_col >= float(fil_val)]
                 st.session_state.action_msg = f"抽出完了： {len(st.session_state.current_df)} 行に絞り込みました。"
@@ -224,7 +223,6 @@ if st.session_state.current_df is not None:
         if st.button("フラグを作成して新しい列を追加する", type="primary"):
             val_high = float(label_high) if label_high.replace('.','',1).isdigit() else label_high
             val_low = float(label_low) if label_low.replace('.','',1).isdigit() else label_low
-            
             temp_series = pd.to_numeric(df[bin_col], errors='coerce')
             st.session_state.current_df[new_col_name] = np.where(temp_series >= threshold, val_high, val_low)
             st.session_state.action_msg = f"フラグ化完了： 新しい列「{new_col_name}」を追加しました。"
@@ -250,7 +248,6 @@ if st.session_state.current_df is not None:
                     st.rerun()
                 except Exception as e: st.error(f"エラー: {e}")
         elif calc_mode.startswith("B"):
-            # 【修正】数値判定を外し、すべての列を選べるように全開放
             math_col_a = st.selectbox("変数A", df.columns, key="m_a")
             math_op = st.selectbox("計算方法", ["＋", "－", "×", "÷"], key="m_op")
             math_type = st.radio("変数Bの種類", ["他の列を指定", "固定の数値を入力"], key="m_type")
@@ -263,7 +260,6 @@ if st.session_state.current_df is not None:
             math_new_name = st.text_input("新しく作る列の名前", value="Calculated_Score", key="m_new")
             if st.button("数式を計算して新しい列を追加する", type="primary"):
                 try:
-                    # 【修正】文字列になっていても裏で強制的に数値化して計算する
                     val_a = pd.to_numeric(df[math_col_a], errors='coerce')
                     if "＋" in math_op: st.session_state.current_df[math_new_name] = val_a + val_b
                     elif "－" in math_op: st.session_state.current_df[math_new_name] = val_a - val_b
@@ -273,27 +269,20 @@ if st.session_state.current_df is not None:
                         st.session_state.current_df[math_new_name] = val_a / val_b
                     st.session_state.action_msg = f"四則演算完了： 新しい列「{math_new_name}」を作成しました。"
                     st.rerun()
-                except Exception as e: st.error(f"計算エラーが発生しました。データの値をご確認ください。詳細: {e}")
-                    
+                except Exception as e: st.error(f"計算エラーが発生しました。詳細: {e}")
         elif calc_mode.startswith("C"):
             date_format_col = st.selectbox("変換したい列（日付や数字の羅列）", df.columns, key="df_col")
             date_format_type = st.radio("現在の形式", ["8桁の数字（YYYYMMDD）", "スラッシュ等で区切られた日付（YYYY/MM/DDなど）", "6桁の年月（YYYYMM） ➡ 後ろに『01』を補う"])
             date_format_new = st.text_input("上書きするか、新しい列を作るか", value=date_format_col, key="df_new")
             if st.button("標準的な日付データ（YYYY-MM-DD）に変換する", type="primary"):
                 try:
-                    if "8桁" in date_format_type: 
-                        st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str), format='%Y%m%d', errors='coerce')
-                    elif "スラッシュ" in date_format_type:
-                        st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str), errors='coerce')
-                    else: 
-                        st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str) + '01', format='%Y%m%d', errors='coerce')
-                    
+                    if "8桁" in date_format_type: st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str), format='%Y%m%d', errors='coerce')
+                    elif "スラッシュ" in date_format_type: st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str), errors='coerce')
+                    else: st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str) + '01', format='%Y%m%d', errors='coerce')
                     st.session_state.current_df[date_format_new] = st.session_state.current_df[date_format_new].dt.strftime('%Y-%m-%d')
                     st.session_state.action_msg = f"日付変換完了： 「{date_format_new}」をカレンダー日付に変換しました。"
                     st.rerun()
                 except Exception as e: st.error(f"変換エラー: {e}")
-        
-        # 💡 型変換の「複数選択（一括処理）」対応
         elif calc_mode.startswith("D"):
             type_cols = st.multiselect("型を変換したい列（複数選択可）", df.columns, key="t_cols")
             type_to = st.radio("変換先の型", ["文字列（IDやカテゴリとして扱う）", "数値（計算できるようにする）"])
@@ -301,27 +290,18 @@ if st.session_state.current_df is not None:
                 if type_cols:
                     try:
                         for col in type_cols:
-                            if "文字列" in type_to: 
-                                st.session_state.current_df[col] = df[col].astype(str)
-                            else: 
-                                st.session_state.current_df[col] = pd.to_numeric(df[col], errors='coerce')
+                            if "文字列" in type_to: st.session_state.current_df[col] = df[col].astype(str)
+                            else: st.session_state.current_df[col] = pd.to_numeric(df[col], errors='coerce')
                         st.session_state.action_msg = f"型変換完了： {len(type_cols)} 列を変換しました。"
                         st.rerun()
                     except Exception as e: st.error(f"エラー: {e}")
-                else:
-                    st.warning("処理したい列を1つ以上選択してください。")
-                
+                else: st.warning("処理したい列を1つ以上選択してください。")
         elif calc_mode.startswith("E"):
-            st.info("データ内にある特定の記号（ハイフンなど）を一括で置換・削除できます。削除する場合は「新しい文字」を空欄にしてください。")
             all_cols = st.checkbox("すべての列を対象にする（一括置換）", value=False)
-            if all_cols:
-                rep_cols = df.columns.tolist()
-            else:
-                rep_cols = st.multiselect("処理対象の列を選択（複数選択可）", df.columns, key="rep_cols")
-                
+            if all_cols: rep_cols = df.columns.tolist()
+            else: rep_cols = st.multiselect("処理対象の列を選択（複数選択可）", df.columns, key="rep_cols")
             rep_target = st.text_input("置換対象の文字", value="-", key="rep_tgt")
             rep_new = st.text_input("新しい文字（消去する場合は空欄）", key="rep_new")
-            
             if st.button("文字の置換・削除を実行して上書きする", type="primary"):
                 if rep_target and rep_cols:
                     for col in rep_cols:
@@ -329,37 +309,25 @@ if st.session_state.current_df is not None:
                         st.session_state.current_df[col] = st.session_state.current_df[col].replace(['', 'nan', 'None'], np.nan)
                     st.session_state.action_msg = f"置換完了： {len(rep_cols)} 列の『{rep_target}』を変換しました。"
                     st.rerun()
-                else:
-                    st.warning("置き換えたい列と文字を入力してください。")
-
+                else: st.warning("置き換えたい列と文字を入力してください。")
         elif calc_mode.startswith("F"):
-            st.info("全角の英数字（１２３、ＡＢＣなど）を半角に統一し、突合エラーの原因となる表記揺れを瞬時に修正します。")
             all_zen_cols = st.checkbox("すべての列を対象にする", value=False, key="zen_all")
-            if all_zen_cols:
-                zen_cols = df.columns.tolist()
-            else:
-                zen_cols = st.multiselect("処理対象の列を選択（複数選択可）", df.columns, key="zen_cols")
-                
+            if all_zen_cols: zen_cols = df.columns.tolist()
+            else: zen_cols = st.multiselect("処理対象の列を選択（複数選択可）", df.columns, key="zen_cols")
             if st.button("全角・半角を統一して上書きする", type="primary"):
                 if zen_cols:
                     try:
-                        for col in zen_cols:
-                            # NFKC正規化で、全角英数字を半角に綺麗に統一
-                            st.session_state.current_df[col] = df[col].astype(str).apply(lambda x: unicodedata.normalize('NFKC', x) if x not in ['nan', 'None', ''] else np.nan)
+                        for col in zen_cols: st.session_state.current_df[col] = df[col].astype(str).apply(lambda x: unicodedata.normalize('NFKC', x) if x not in ['nan', 'None', ''] else np.nan)
                         st.session_state.action_msg = f"表記揺れ修正完了： {len(zen_cols)} 列の全角・半角を統一しました。"
                         st.rerun()
                     except Exception as e: st.error(f"エラー: {e}")
-                else:
-                    st.warning("処理したい列を選択してください。")
-
+                else: st.warning("処理したい列を選択してください。")
         elif calc_mode.startswith("G"):
-            st.info("データの前後に紛れ込んだ余分な空白（スペース）を一括で削除します。")
             strip_cols = st.multiselect("処理対象の列を選択（複数選択可）", df.columns, key="strp_cols")
             if st.button("空白を削除して上書きする", type="primary"):
                 if strip_cols:
                     for col in strip_cols:
                         st.session_state.current_df[col] = df[col].astype(str).str.strip()
-                        # 空白だけだったセルはNaNに戻す
                         st.session_state.current_df[col] = st.session_state.current_df[col].replace(['', 'nan', 'None'], np.nan)
                     st.session_state.action_msg = f"空白削除完了： {len(strip_cols)} 列の前後スペースを削除しました。"
                     st.rerun()
@@ -376,25 +344,28 @@ if st.session_state.current_df is not None:
         ])
 
         if transform_mode.startswith("A"):
-            col_id = st.selectbox("1. 固体の識別子となる列（IDなど）", df.columns, key="piv_id")
+            # 🌟【修正】タイポの修正
+            col_id = st.selectbox("1. 個体の識別子となる列（IDなど）", df.columns, key="piv_id")
             col_time = st.selectbox("2. 時間や回数を表す列", [c for c in df.columns if c != col_id], key="piv_time")
             col_value = st.selectbox("3. 横に並べ替えたい数値の列", [c for c in df.columns if c not in [col_id, col_time]], key="piv_val")
             if st.button("横持ちへ変換して上書きする", type="primary"):
                 try:
-                    df_pivoted = df.pivot(index=col_id, columns=col_time, values=col_value)
-                    df_pivoted.columns = [f"{col_value}_{col}" for col in df_pivoted.columns]
-                    df_pivoted = df_pivoted.reset_index()
-                    st.session_state.current_df = df_pivoted
-                    st.session_state.action_msg = f"構造変換完了： {len(df_pivoted)} 行の横長データに変換しました。"
-                    st.rerun()
-                except Exception as e: st.error(f"構造変換に失敗しました。Excelの列名に不備がないかご確認ください。詳細: {e}")
-        
+                    # 🌟【修正】重複をサイレントに消去せず、明示的に検知して安全にユーザーへ警告を出すロジック
+                    if df.duplicated(subset=[col_id, col_time]).any():
+                        st.error("⚠️ 構造変換エラー：同一の『個体ID』と『時間・回数』の組み合わせの中に、重複したデータ（同じ時点のデータが2つ以上）が検出されました。先にタブ1の重複削除を行うか、元のExcelデータをご確認ください。")
+                    else:
+                        df_pivoted = df.pivot(index=col_id, columns=col_time, values=col_value)
+                        df_pivoted.columns = [f"{col_value}_{col}" for col in df_pivoted.columns]
+                        df_pivoted = df_pivoted.reset_index()
+                        st.session_state.current_df = df_pivoted
+                        st.session_state.action_msg = f"構造変換完了： {len(df_pivoted)} 行の横長データに変換しました。"
+                        st.rerun()
+                except Exception as e: st.error(f"構造変換に失敗しました。詳細: {e}")
         else:
             id_vars = st.multiselect("固定して残す列（都道府県、背景因子など）", df.columns, key="melt_id")
             val_vars = [c for c in df.columns if c not in id_vars]
             var_name = st.text_input("折りたたんだ列名（属性）につける新しい名前", value="属性", key="melt_var")
             val_name = st.text_input("その数値につける新しい名前", value="値", key="melt_val")
-            
             if st.button("縦持ちへ変換して上書きする", type="primary"):
                 if id_vars:
                     try:
@@ -403,8 +374,7 @@ if st.session_state.current_df is not None:
                         st.session_state.action_msg = f"構造変換完了： {len(df_melted)} 行の縦長データに変換しました。"
                         st.rerun()
                     except Exception as e: st.error(f"構造変換に失敗しました。詳細: {e}")
-                else:
-                    st.warning("固定して残す列を少なくとも1つ選んでください。")
+                else: st.warning("固定して残す列を少なくとも1つ選んでください。")
 
     # ==========================================
     # 6. 突合
@@ -428,13 +398,11 @@ if st.session_state.current_df is not None:
         else: st.info("左側のサイドバーから結合用の別ファイルをアップロードしてください。")
 
     # ==========================================
-    # 7. 傾向スコアマッチング（PSM）
+    # 7. PSM
     # ==========================================
     elif selected_tab == "7. PSM":
         st.markdown("### 傾向スコアマッチング（1:1 最近傍マッチング）")
         st.info("【重要】介入変数（治療の有無など）は必ず「1 と 0」のデータである必要があります。事前にタブ3でフラグ化を完了させておいてください。")
-        
-        # 【修正】制限をなくし、すべての列から選べるようにする
         treat_col = st.selectbox("介入変数（治療の有無: 1 or 0）", df.columns, key="psm_treat")
         covar_cols = st.multiselect("揃えたい背景因子（共変量: 年齢、数値データなど）", [c for c in df.columns if c != treat_col], key="psm_cov")
         
@@ -442,11 +410,8 @@ if st.session_state.current_df is not None:
             if treat_col and len(covar_cols) > 0:
                 try:
                     psm_df = df.dropna(subset=[treat_col] + covar_cols).copy()
-                    
-                    # 【修正】文字列になっていても裏で強制的に数値化してエラーを防ぐ
                     psm_df[treat_col] = pd.to_numeric(psm_df[treat_col], errors='coerce')
-                    for c in covar_cols:
-                        psm_df[c] = pd.to_numeric(psm_df[c], errors='coerce')
+                    for c in covar_cols: psm_df[c] = pd.to_numeric(psm_df[c], errors='coerce')
                     psm_df = psm_df.dropna(subset=[treat_col] + covar_cols)
                     
                     if not set(psm_df[treat_col].unique()).issubset({0, 1, 0.0, 1.0}):
@@ -455,8 +420,13 @@ if st.session_state.current_df is not None:
                     X = sm.add_constant(psm_df[covar_cols])
                     y = psm_df[treat_col]
                     
-                    # 💡 完全分離対策：maxiterを設定（すでにtry-exceptで囲まれているためエラー時も画面に綺麗に表示されます）
-                    model = sm.Logit(y, X).fit(disp=0, maxiter=100)
+                    # 🌟【修正】例外処理を厳格化。完全分離エラー時のみ安全にL1正則化へ移行させるロジック
+                    try:
+                        model = sm.Logit(y, X).fit(disp=0, maxiter=100)
+                    except PerfectSeparationError:
+                        st.warning("⚠️ 完全分離（Perfect separation）が検出されたため、自動的に正則化ロジック（L1）に切り替えて計算を継続しました。")
+                        model = sm.Logit(y, X).fit_regularized(disp=0, maxiter=100)
+                        
                     psm_df['Propensity_Score'] = model.predict(X)
                     
                     treat_df = psm_df[psm_df[treat_col] == 1].copy()
@@ -465,35 +435,25 @@ if st.session_state.current_df is not None:
                     matched_indices = []
                     pair_ids = []
                     pair_counter = 1
-                    
                     for idx, row in treat_df.iterrows():
                         if len(control_df) == 0: break
                         distances = np.abs(control_df['Propensity_Score'] - row['Propensity_Score'])
                         best_match_idx = distances.idxmin()
-                        
                         matched_indices.append(idx)
                         matched_indices.append(best_match_idx)
-                        
-                        # 💡 論文作業で超役立つ「ペア番号」を同時に生成
                         pair_ids.append(f"Pair_{pair_counter}")
                         pair_ids.append(f"Pair_{pair_counter}")
                         pair_counter += 1
-                        
                         control_df = control_df.drop(best_match_idx)
                     
                     matched_df = psm_df.loc[matched_indices].copy()
-                    # 💡 マッチング結果にペアID列を追加
                     matched_df['PSM_Pair_ID'] = pair_ids
-                    
                     old_len = len(df)
                     new_len = len(matched_df)
                     st.session_state.current_df = matched_df
                     st.session_state.action_msg = f"PSM完了： {int(new_len/2)}組 のペアを作成し、対応する『PSM_Pair_ID』を付与しました。（全体行数: {old_len} ➡ {new_len}）"
                     st.rerun()
-                except Exception as e:
-                    st.error(f"統計計算中にエラーが発生しました。データの欠損状態やデータ型をご確認ください。詳細: {e}")
-            else:
-                st.warning("介入変数と、少なくとも1つの背景因子を選択してください。")
-
+                except Exception as e: st.error(f"統計計算中にエラーが発生しました。データの値や欠損状態をご確認ください。詳細: {e}")
+            else: st.warning("介入変数と、少なくとも1つの背景因子を選択してください。")
 else:
     st.info("左のサイドバーからメインデータ（CSVまたはExcel）をアップロードして開始してください。")
