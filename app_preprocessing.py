@@ -30,9 +30,14 @@ def load_data(file, skip, head):
     else: df = pd.read_excel(file, skiprows=skip, header=list(range(head)), dtype=str)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = ['_'.join(filter(None, [str(c) for c in col])).strip() for col in df.columns.values]
-    df = df.apply(lambda col: pd.to_numeric(col, errors='ignore') if col.dtype == 'object' else col)
+    
+    # 🌟【最後の修正】非推奨コードを排除し、安全に数値化を試みるロジックに変更
+    def safe_to_numeric(col):
+        try: return pd.to_numeric(col)
+        except Exception: return col
+        
+    df = df.apply(lambda col: safe_to_numeric(col) if col.dtype == 'object' else col)
     return df
-
 # リアルタイム読み込みシステム
 if uploaded_file is None:
     st.session_state.raw_df = None
