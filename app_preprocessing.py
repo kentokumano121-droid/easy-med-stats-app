@@ -292,9 +292,17 @@ if st.session_state.current_df is not None:
             date_format_new = st.text_input("上書きするか、新しい列を作るか", value=date_format_col, key="df_new")
             if st.button("標準的な日付データ（YYYY-MM-DD）に変換する", type="primary"):
                 try:
-                    if "8桁" in date_format_type: st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str), format='%Y%m%d', errors='coerce')
-                    elif "スラッシュ" in date_format_type: st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str), errors='coerce')
-                    else: st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str) + '01', format='%Y%m%d', errors='coerce')
+                    # 🌟【修正】8桁もスラッシュも混ざっていても、両方とも救済して合体させる無敵コード
+                    if "6桁" in date_format_type:
+                        st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str) + '01', format='%Y%m%d', errors='coerce')
+                    else:
+                        # 8桁として解読を試みる
+                        s_8 = pd.to_datetime(df[date_format_col].astype(str), format='%Y%m%d', errors='coerce')
+                        # スラッシュ等として解読を試みる
+                        s_slash = pd.to_datetime(df[date_format_col].astype(str), errors='coerce')
+                        # 解読できた方を採用して合体させる（データ消失を防ぐ）
+                        st.session_state.current_df[date_format_new] = s_8.combine_first(s_slash)
+                    
                     st.session_state.current_df[date_format_new] = st.session_state.current_df[date_format_new].dt.strftime('%Y-%m-%d')
                     st.session_state.action_msg = f"日付変換完了： 「{date_format_new}」をカレンダー日付に変換しました。"
                     st.rerun()
