@@ -134,6 +134,8 @@ if st.session_state.current_df is not None:
 
     with st.expander("データプレビュー・型の確認", expanded=False):
         st.dataframe(df.head(100), use_container_width=True)
+        # 🌟 型をリストで出したい場合はこの1行を足すだけ！
+        st.write("▼ 各列のデータ型一覧", df.dtypes.astype(str))
 
     selected_tab = st.radio(
         "データ編集メニュー", 
