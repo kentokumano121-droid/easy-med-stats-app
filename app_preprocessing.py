@@ -68,16 +68,16 @@ if uploaded_file_B is not None:
         uploaded_file_B.seek(0)
         df_B = load_data(uploaded_file_B, skip_rows_b, header_rows_b)
 
-if df_B is not None:
-    st.sidebar.markdown("**📂 結合用データのプレビュー**")
-    st.sidebar.dataframe(df_B.head(3), use_container_width=True)
-
 if st.session_state.current_df is not None:
     df = st.session_state.current_df
 
     st.sidebar.markdown("---")
     st.sidebar.header("データステータス")
     st.sidebar.info(f"**行数:** {len(df):,} 行\n\n**列数:** {len(df.columns)} 列")
+
+    if df_B is not None:
+        st.sidebar.markdown("**📂 結合用データのプレビュー**")
+        st.sidebar.dataframe(df_B.head(3), use_container_width=True)
 
     st.sidebar.markdown("---")
     st.sidebar.header("データ出力・リセット")
@@ -104,17 +104,20 @@ if st.session_state.current_df is not None:
         else: st.dataframe(df, use_container_width=True)
 
     st.write("---")
-    st.subheader("データ編集メニュー")
-
-    tab1, tab2, tab3, tab6, tab4, tab5, tab7 = st.tabs([
-        "1. 列整理・ゴミ取り", "2. 抽出", "3. フラグ化",
-        "4. 計算・変換", "5. 縦横変換", "6. 突合", "7. PSM"
-    ])
+    
+    # 💡 ここが最大の変更点：タブの代わりに「横並びのラジオボタン」を使って状態を記憶させる
+    selected_tab = st.radio(
+        "データ編集メニュー", 
+        ["1. 列整理・ゴミ取り", "2. 抽出", "3. フラグ化", "4. 計算・変換", "5. 縦横変換", "6. 突合", "7. PSM"],
+        horizontal=True,
+        key="main_menu"
+    )
+    st.markdown("---")
 
     # ==========================================
-    # タブ1：列整理とゴミ取り
+    # 1. 列整理とゴミ取り
     # ==========================================
-    with tab1:
+    if selected_tab == "1. 列整理・ゴミ取り":
         col_l, col_r = st.columns(2)
         with col_l:
             st.markdown("### 列名の変更")
@@ -169,9 +172,9 @@ if st.session_state.current_df is not None:
                 st.rerun()
 
     # ==========================================
-    # タブ2：抽出
+    # 2. 抽出
     # ==========================================
-    with tab2:
+    elif selected_tab == "2. 抽出":
         st.markdown("### 条件に合うデータのみ抽出")
         fil_col = st.selectbox("検索対象の列", df.columns, key="fil_col")
         fil_type = st.radio("検索条件", ["キーワードを含む", "完全に一致する", "数値が〇〇以上"], key="fil_type")
@@ -185,9 +188,9 @@ if st.session_state.current_df is not None:
                 st.rerun()
 
     # ==========================================
-    # タブ3：フラグ化
+    # 3. フラグ化
     # ==========================================
-    with tab3:
+    elif selected_tab == "3. フラグ化":
         st.markdown("### 連続値のカテゴリ化・フラグ立て（1 / 0）")
         bin_col = st.selectbox("フラグ化・カテゴリ化する列", df.columns, key="bin_col")
         threshold = st.number_input("基準となる数値を入力", value=65.0, key="bin_th")
@@ -199,16 +202,15 @@ if st.session_state.current_df is not None:
             val_high = float(label_high) if label_high.replace('.','',1).isdigit() else label_high
             val_low = float(label_low) if label_low.replace('.','',1).isdigit() else label_low
             
-            # 裏側で一時的に数値に変換してエラーを防ぐ
             temp_series = pd.to_numeric(df[bin_col], errors='coerce')
             st.session_state.current_df[new_col_name] = np.where(temp_series >= threshold, val_high, val_low)
             st.session_state.action_msg = f"フラグ化完了： 新しい列「{new_col_name}」を追加しました。"
             st.rerun()
 
     # ==========================================
-    # タブ4：変数の計算・変換（一括置換）
+    # 4. 変数の計算・変換（一括置換）
     # ==========================================
-    with tab6:
+    elif selected_tab == "4. 計算・変換":
         st.markdown("### 変数の計算・変換・クリーニング")
         calc_mode = st.radio("処理メニュー", ["A. 日付差分計算", "B. 四則演算", "C. 日付フォーマット変換", "D. データ型強制変換", "E. 文字列の置換・削除"])
         
@@ -256,16 +258,24 @@ if st.session_state.current_df is not None:
                     st.session_state.action_msg = f"日付変換完了： 「{date_format_new}」をカレンダー日付に変換しました。"
                     st.rerun()
                 except Exception as e: st.error(f"変換エラー: {e}")
+        
+        # 💡 型変換の「複数選択（一括処理）」対応
         elif calc_mode.startswith("D"):
-            type_col = st.selectbox("型を変換したい列", df.columns, key="t_col")
+            type_cols = st.multiselect("型を変換したい列（複数選択可）", df.columns, key="t_cols")
             type_to = st.radio("変換先の型", ["文字列（IDやカテゴリとして扱う）", "数値（計算できるようにする）"])
             if st.button("データ型を強制変換して上書きする", type="primary"):
-                try:
-                    if "文字列" in type_to: st.session_state.current_df[type_col] = df[type_col].astype(str)
-                    else: st.session_state.current_df[type_col] = pd.to_numeric(df[type_col], errors='coerce')
-                    st.session_state.action_msg = f"型変換完了： 「{type_col}」を変換しました。"
-                    st.rerun()
-                except Exception as e: st.error(f"エラー: {e}")
+                if type_cols:
+                    try:
+                        for col in type_cols:
+                            if "文字列" in type_to: 
+                                st.session_state.current_df[col] = df[col].astype(str)
+                            else: 
+                                st.session_state.current_df[col] = pd.to_numeric(df[col], errors='coerce')
+                        st.session_state.action_msg = f"型変換完了： {len(type_cols)} 列を変換しました。"
+                        st.rerun()
+                    except Exception as e: st.error(f"エラー: {e}")
+                else:
+                    st.warning("処理したい列を1つ以上選択してください。")
                 
         elif calc_mode.startswith("E"):
             st.info("データ内にある特定の記号（ハイフンなど）を一括で置換・削除できます。削除する場合は「新しい文字」を空欄にしてください。")
@@ -289,9 +299,9 @@ if st.session_state.current_df is not None:
                     st.warning("置き換えたい列と文字を入力してください。")
 
     # ==========================================
-    # タブ5：構造変換（Pivot ＆ Melt）
+    # 5. 構造変換（Pivot ＆ Melt）
     # ==========================================
-    with tab4:
+    elif selected_tab == "5. 縦横変換":
         st.markdown("### データの縦横変換")
         transform_mode = st.radio("変換の方向", [
             "A. 縦長 ➡ 横長 (Pivot)：IDごとに時間を横に並べる",
@@ -330,9 +340,9 @@ if st.session_state.current_df is not None:
                     st.warning("固定して残す列を少なくとも1つ選んでください。")
 
     # ==========================================
-    # タブ6：突合
+    # 6. 突合
     # ==========================================
-    with tab5:
+    elif selected_tab == "6. 突合":
         st.markdown("### 2つのファイルをIDで突合する（横結合）")
         if df_B is not None:
             col_left = st.selectbox("現在のデータ側のID", df.columns, key="join_L")
@@ -351,9 +361,9 @@ if st.session_state.current_df is not None:
         else: st.info("左側のサイドバーから結合用の別ファイルをアップロードしてください。")
 
     # ==========================================
-    # タブ7：傾向スコアマッチング（PSM）
+    # 7. 傾向スコアマッチング（PSM）
     # ==========================================
-    with tab7:
+    elif selected_tab == "7. PSM":
         st.markdown("### 傾向スコアマッチング（1:1 最近傍マッチング）")
         st.info("【重要】介入変数（治療の有無など）は必ず「1 と 0」の数値データで入力されている必要があります。事前にタブ3でフラグ化を完了させておいてください。")
         treat_col = st.selectbox("介入変数（治療の有無: 1 or 0）", [c for c in df.columns if set(df[c].dropna().unique()).issubset({0, 1, 0.0, 1.0, '0', '1'})], key="psm_treat")
