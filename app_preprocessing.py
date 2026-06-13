@@ -261,13 +261,18 @@ if st.session_state.current_df is not None:
                     st.rerun()
                 except Exception as e: st.error(f"エラー: {e}")
         elif calc_mode.startswith("C"):
-            date_format_col = st.selectbox("変換したい列（数字の羅列）", df.columns, key="df_col")
-            date_format_type = st.radio("現在の形式", ["8桁の数字（YYYYMMDD）", "6桁の年月（YYYYMM） ➡ 後ろに『01』を補う"])
+            date_format_col = st.selectbox("変換したい列（日付や数字の羅列）", df.columns, key="df_col")
+            date_format_type = st.radio("現在の形式", ["8桁の数字（YYYYMMDD）", "スラッシュ等で区切られた日付（YYYY/MM/DDなど）", "6桁の年月（YYYYMM） ➡ 後ろに『01』を補う"])
             date_format_new = st.text_input("上書きするか、新しい列を作るか", value=date_format_col, key="df_new")
-            if st.button("日付データに変換する", type="primary"):
+            if st.button("標準的な日付データ（YYYY-MM-DD）に変換する", type="primary"):
                 try:
-                    if "8桁" in date_format_type: st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str), format='%Y%m%d', errors='coerce')
-                    else: st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str) + '01', format='%Y%m%d', errors='coerce')
+                    if "8桁" in date_format_type: 
+                        st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str), format='%Y%m%d', errors='coerce')
+                    elif "スラッシュ" in date_format_type:
+                        st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str), errors='coerce')
+                    else: 
+                        st.session_state.current_df[date_format_new] = pd.to_datetime(df[date_format_col].astype(str) + '01', format='%Y%m%d', errors='coerce')
+                    
                     st.session_state.current_df[date_format_new] = st.session_state.current_df[date_format_new].dt.strftime('%Y-%m-%d')
                     st.session_state.action_msg = f"日付変換完了： 「{date_format_new}」をカレンダー日付に変換しました。"
                     st.rerun()
