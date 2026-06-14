@@ -568,16 +568,25 @@ if st.session_state.current_df is not None:
                     # ─── ステップ5: SMD計算 ───
                     progress_bar.progress(92, text="SMD（標準化平均差）を計算中…")
                     smd_data = []
-                    for c in X_dummies.columns:
-                        mean_t_pre = treat_df[c].mean()
-                        mean_c_pre = psm_df_smd[psm_df_smd[treat_col]==0][c].mean()
-                        var_pool_pre = (treat_df[c].std()**2 + psm_df_smd[psm_df_smd[treat_col]==0][c].std()**2) / 2
-                        smd_pre = abs(mean_t_pre - mean_c_pre) / np.sqrt(var_pool_pre) if var_pool_pre > 0 else 0
 
-                        mt = matched_df[matched_df[treat_col]==1][c]
-                        mc = matched_df[matched_df[treat_col]==0][c]
-                        var_pool_post = (mt.std()**2 + mc.std()**2) / 2
-                        smd_post = abs(mt.mean() - mc.mean()) / np.sqrt(var_pool_post) if var_pool_post > 0 else 0
+                    # 対照群・治療群のマスクを事前にSeriesで取っておく（毎回フィルタしない）
+                    treat_mask = psm_df_smd[treat_col].astype(float) == 1.0
+                    ctrl_mask  = psm_df_smd[treat_col].astype(float) == 0.0
+                    matched_treat_mask = matched_df[treat_col].astype(float) == 1.0
+                    matched_ctrl_mask  = matched_df[treat_col].astype(float) == 0.0
+
+                    for c in X_dummies.columns:
+                        # マッチ前
+                        t_vals_pre = treat_df[c].values.astype(float)
+                        c_vals_pre = psm_df_smd.loc[ctrl_mask, c].values.astype(float)
+                        var_pre = (np.nanstd(t_vals_pre, ddof=1)**2 + np.nanstd(c_vals_pre, ddof=1)**2) / 2
+                        smd_pre = float(abs(np.nanmean(t_vals_pre) - np.nanmean(c_vals_pre)) / np.sqrt(var_pre)) if var_pre > 0 else 0.0
+
+                        # マッチ後
+                        t_vals_post = matched_df.loc[matched_treat_mask, c].values.astype(float)
+                        c_vals_post = matched_df.loc[matched_ctrl_mask,  c].values.astype(float)
+                        var_post = (np.nanstd(t_vals_post, ddof=1)**2 + np.nanstd(c_vals_post, ddof=1)**2) / 2
+                        smd_post = float(abs(np.nanmean(t_vals_post) - np.nanmean(c_vals_post)) / np.sqrt(var_post)) if var_post > 0 else 0.0
 
                         smd_data.append({"共変量": c, "マッチ前 SMD": round(smd_pre, 3), "マッチ後 SMD": round(smd_post, 3)})
 
