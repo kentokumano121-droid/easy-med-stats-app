@@ -485,6 +485,9 @@ if st.session_state.current_df is not None:
         if st.button("傾向スコアを計算し、マッチングを実行して上書きする", type="primary"):
             if treat_col and len(covar_cols) > 0:
                 try:
+                    # ─── ステップ0: 進捗バーの初期化 ───
+                    progress_bar = st.progress(0, text="データを前処理中…")
+
                     psm_df = df.dropna(subset=[treat_col] + covar_cols).copy()
                     psm_df[treat_col] = pd.to_numeric(psm_df[treat_col], errors='coerce')
                     psm_df = psm_df.dropna(subset=[treat_col])
@@ -492,74 +495,107 @@ if st.session_state.current_df is not None:
                     if not set(psm_df[treat_col].unique()).issubset({0, 1, 0.0, 1.0}):
                         raise ValueError("介入変数は「1」と「0」のみである必要があります。")
                     
+                    # ─── ステップ1: ダミー変数化 ───
+                    progress_bar.progress(15, text="ダミー変数を作成中…")
                     X_raw = psm_df[covar_cols].copy()
                     X_dummies = pd.get_dummies(X_raw, drop_first=True, dtype=float)
-                    
                     psm_df_smd = pd.concat([psm_df, X_dummies], axis=1)
-                    
                     X = sm.add_constant(X_dummies)
                     y = psm_df[treat_col]
                     
+                    # ─── ステップ2: ロジスティック回帰 ───
+                    progress_bar.progress(35, text="傾向スコアをロジスティック回帰で推定中…")
                     try:
                         model = sm.Logit(y, X).fit(disp=0, maxiter=100)
-                    except PerfectSeparationError:
-                        st.warning("⚠️ 完全分離が検出されたため、正則化（L1）に切り替えて計算を継続しました。")
+                    except Exception:  # ✅ ここを修正しました！これで安全に動きます。
+                        st.warning("⚠️ 収束エラー（完全分離など）が検出されたため、正則化（L1）に切り替えて計算を継続しました。")
                         model = sm.Logit(y, X).fit_regularized(disp=0, maxiter=100)
-                        
+                    
                     psm_df_smd['Propensity_Score'] = model.predict(X)
                     
+                    # ─── ステップ3: キャリパー計算 ───
+                    progress_bar.progress(55, text="キャリパーを設定してマッチングを実行中…")
                     caliper = max(0.2 * psm_df_smd['Propensity_Score'].std(), 0.01)
                     
+                    # --- ベクトル化マッチング（高速版）---
                     treat_df = psm_df_smd[psm_df_smd[treat_col] == 1].sample(frac=1, random_state=42).copy()
                     control_df = psm_df_smd[psm_df_smd[treat_col] == 0].copy()
-                    
-                    matched_indices = []
+
+                    treat_ps = treat_df['Propensity_Score'].values
+                    control_ps = control_df['Propensity_Score'].values
+                    control_original_idx = control_df.index.to_numpy()
+
+                    matched_treat_locs = []
+                    matched_control_locs = []
                     pair_ids = []
+                    used_mask = np.zeros(len(control_ps), dtype=bool)
+
                     pair_counter = 1
-                    
-                    for idx, row in treat_df.iterrows():
-                        if len(control_df) == 0: break
-                        distances = np.abs(control_df['Propensity_Score'] - row['Propensity_Score'])
-                        best_match_idx = distances.idxmin()
-                        
-                        if distances[best_match_idx] <= caliper:
-                            matched_indices.append(idx)
-                            matched_indices.append(best_match_idx)
-                            pair_ids.extend([f"Pair_{pair_counter}"] * 2)
+                    for i, ps_t in enumerate(treat_ps):
+                        if used_mask.all():
+                            break
+                        distances = np.abs(control_ps - ps_t)
+                        distances[used_mask] = np.inf
+
+                        best_j = int(np.argmin(distances))
+                        best_dist = float(distances[best_j])
+
+                        if best_dist <= caliper:
+                            matched_treat_locs.append(i)
+                            matched_control_locs.append(best_j)
+                            pair_ids.append(f"Pair_{pair_counter}")
+                            pair_ids.append(f"Pair_{pair_counter}")
                             pair_counter += 1
-                            control_df = control_df.drop(best_match_idx)
-                    
+                            used_mask[best_j] = True
+
+                    # ─── ステップ4: マッチング結果を組み立て ───
+                    progress_bar.progress(80, text="マッチング結果を集計中…")
+
+                    treat_matched_idx = treat_df.index[matched_treat_locs]
+                    control_matched_idx = control_original_idx[matched_control_locs]
+                    matched_indices = np.concatenate([treat_matched_idx, control_matched_idx])
+
+                    pair_ids_treat = pair_ids[::2]
+                    pair_ids_ctrl  = pair_ids[1::2]
+                    pair_ids_ordered = pair_ids_treat + pair_ids_ctrl
+
+                    matched_df = psm_df_smd.loc[matched_indices].copy()
+                    matched_df['PSM_Pair_ID'] = pair_ids_ordered
+
                     if len(treat_df) < 10 or len(control_df) < 10:
                         st.warning("⚠️ 警告：治療群または対照群のサンプル数が10件未満です。マッチング結果の統計的信頼性が低くなる可能性があります。")
 
-                    matched_df = psm_df_smd.loc[matched_indices].copy()
-                    matched_df['PSM_Pair_ID'] = pair_ids
-                    
+                    # ─── ステップ5: SMD計算 ───
+                    progress_bar.progress(92, text="SMD（標準化平均差）を計算中…")
                     smd_data = []
                     for c in X_dummies.columns:
                         mean_t_pre = treat_df[c].mean()
                         mean_c_pre = psm_df_smd[psm_df_smd[treat_col]==0][c].mean()
                         var_pool_pre = (treat_df[c].std()**2 + psm_df_smd[psm_df_smd[treat_col]==0][c].std()**2) / 2
                         smd_pre = abs(mean_t_pre - mean_c_pre) / np.sqrt(var_pool_pre) if var_pool_pre > 0 else 0
-                        
+
                         mt = matched_df[matched_df[treat_col]==1][c]
                         mc = matched_df[matched_df[treat_col]==0][c]
                         var_pool_post = (mt.std()**2 + mc.std()**2) / 2
                         smd_post = abs(mt.mean() - mc.mean()) / np.sqrt(var_pool_post) if var_pool_post > 0 else 0
-                        
+
                         smd_data.append({"共変量": c, "マッチ前 SMD": round(smd_pre, 3), "マッチ後 SMD": round(smd_post, 3)})
-                    
+
+                    # ─── 完了 ───
+                    progress_bar.progress(100, text="✅ 完了！")
+
                     save_history()
                     st.session_state.smd_result = pd.DataFrame(smd_data)
                     st.session_state.current_df = matched_df
-                    st.session_state.action_msg = f"PSM完了： {int(len(matched_df)/2)}組のペアを作成しました。（キャリパー: {caliper:.4f}）"
+                    st.session_state.action_msg = f"PSM完了： {int(len(matched_treat_locs))}組のペアを作成しました。（キャリパー: {caliper:.4f}）"
                     st.rerun()
-                except Exception as e: st.error(f"統計計算エラー: {e}")
-            else: st.warning("介入変数と背景因子を選択してください。")
+                except Exception as e:
+                    st.error(f"統計計算エラー: {e}")
+            else:
+                st.warning("介入変数と背景因子を選択してください。")
 
         if st.session_state.smd_result is not None:
             st.success("✅ マッチングが完了しました。共変量のバランス（SMD）は以下の通りです。一般的にSMD < 0.1 であればバランスが取れているとされます。")
             st.dataframe(st.session_state.smd_result, use_container_width=True)
-
 else:
     st.info("左のサイドバーからメインデータをアップロードして開始してください。")
