@@ -499,7 +499,11 @@ if st.session_state.current_df is not None:
                     progress_bar.progress(15, text="ダミー変数を作成中…")
                     X_raw = psm_df[covar_cols].copy()
                     X_dummies = pd.get_dummies(X_raw, drop_first=True, dtype=float)
-                    psm_df_smd = pd.concat([psm_df, X_dummies], axis=1)
+                    
+                    # ↓ここを修正（重複列を除外して結合）
+                    new_dummy_cols = [c for c in X_dummies.columns if c not in psm_df.columns]
+                    psm_df_smd = pd.concat([psm_df, X_dummies[new_dummy_cols]], axis=1)
+                    
                     X = sm.add_constant(X_dummies)
                     y = psm_df[treat_col]
                     
@@ -595,6 +599,10 @@ if st.session_state.current_df is not None:
 
                     save_history()
                     st.session_state.smd_result = pd.DataFrame(smd_data)
+                    
+                    # ↓ここに追加（念のための重複列ガード）
+                    matched_df = matched_df.loc[:, ~matched_df.columns.duplicated()]
+                    
                     st.session_state.current_df = matched_df
                     st.session_state.action_msg = f"PSM完了： {int(len(matched_treat_locs))}組のペアを作成しました。（キャリパー: {caliper:.4f}）"
                     st.rerun()
